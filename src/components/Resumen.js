@@ -36,7 +36,7 @@ export default function Resumen({ data }) {
     labels: evolucion.map(r => r.mes),
     datasets: [{
       data: evolucion.map(r => Math.round((Number(r.toneladas) || 0) / 1000)),
-      backgroundColor: "#185FA5",
+      backgroundColor: "#1A5FA8",
       borderRadius: 4,
       borderSkipped: false,
     }],
@@ -108,7 +108,7 @@ export default function Resumen({ data }) {
       <div className="sec">Navegación</div>
       <div className="pill-row">
         <div className="pill">
-          <div className="pill-num" style={{ color: "#185FA5" }}>
+          <div className="pill-num" style={{ color: "#1A5FA8" }}>
             {Math.round(navegacion?.total_buques || 0).toLocaleString("es-AR")}
           </div>
           <div className="pill-lbl">Total buques</div>

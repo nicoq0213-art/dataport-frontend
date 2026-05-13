@@ -105,7 +105,7 @@ function AppContent() {
             <img src={LOGO_SRC} alt="Logo"
               style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#1A4F8A" }}>Data Port</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#1A5FA8" }}>Data Port</div>
               <div style={{ fontSize: 10, color: "#888" }}>{auth.nombre || auth.role}</div>
             </div>
           </div>
@@ -137,13 +137,13 @@ function AppContent() {
               justifyContent: "center", padding: "48px 24px", textAlign: "center", gap: 16,
             }}>
               <div style={{ fontSize: 32 }}>⚠️</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#1A4F8A" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1A5FA8" }}>
                 No se pudo cargar la información
               </div>
               <div style={{ fontSize: 13, color: "#666", maxWidth: 280 }}>{error}</div>
               <button onClick={cargarDatos} style={{
                 marginTop: 8, padding: "10px 24px", borderRadius: 8, border: "none",
-                background: "#1A4F8A", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                background: "#1A5FA8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>
                 Reintentar
               </button>
@@ -161,8 +161,8 @@ function AppContent() {
               {hayFiltros && (
                 <div style={{
                   background: "#EBF4FB", borderRadius: 8, padding: "8px 12px",
-                  marginBottom: 12, fontSize: 11, color: "#1A4F8A",
-                  borderLeft: "3px solid #1E7BC4",
+                  marginBottom: 12, fontSize: 11, color: "#1A5FA8",
+                  borderLeft: "3px solid #2B7EC1",
                   display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
                 }}>
                   <span style={{ fontWeight: 600 }}>Vista filtrada:</span>
