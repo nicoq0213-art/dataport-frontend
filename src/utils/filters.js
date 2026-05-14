@@ -32,16 +32,17 @@ function varPct(a, b) { return a > 0 ? ((b - a) / a * 100) : 0; }
 // ── Construcción de evolucion_mensual filtrada ────────────────────────────────
 
 function buildEvo(datos, meses, opKeys, formaKeys, permisionario) {
-  // 1. Permisionario: usa datos por empresa
+  // 1. Permisionario: usa datos por empresa, respetando el filtro de operación
   if (permisionario) {
     const src = filtrarMeses(datos.permisionarios?.por_mes || [], meses);
-    return src.map(m => ({
-      mes:         m.mes,
-      toneladas:   safe((m.empresas || []).find(e => e.empresa?.trim() === permisionario?.trim())?.toneladas),
-      importacion: null,
-      exportacion: null,
-      removido:    null,
-    }));
+    return src.map(m => {
+      const emp = (m.empresas || []).find(e => e.empresa?.trim() === permisionario?.trim());
+      if (!emp) return { mes: m.mes, toneladas: 0, importacion: 0, exportacion: 0, removido: 0 };
+      const imp = opKeys.includes("importacion") ? safe(emp.importacion) : 0;
+      const exp = opKeys.includes("exportacion") ? safe(emp.exportacion) : 0;
+      const rem = opKeys.includes("removido")    ? safe(emp.removido)    : 0;
+      return { mes: m.mes, toneladas: imp + exp + rem, importacion: imp, exportacion: exp, removido: rem };
+    });
   }
 
   // 2. Con tipo de carga: usa evolucion_formas (S3 mensual)
@@ -149,9 +150,9 @@ export function applyFilters(datos, filtros) {
     ...datos.resumen,
     mercaderias: {
       total:       totalMerc,
-      importacion: permisionario ? null : totalImp,
-      exportacion: permisionario ? null : totalExp,
-      removido:    permisionario ? null : totalRem,
+      importacion: totalImp || null,
+      exportacion: totalExp || null,
+      removido:    totalRem || null,
       var_pct:     null,
     },
     evolucion_mensual: filteredEvo,
@@ -180,35 +181,36 @@ export function applyFilters(datos, filtros) {
 
   const hasNonMesesFilter = !!(permisionario || operaciones.length > 0 || cargasFiltro.length > 0);
 
-  // Lookup normalizado: busca la clave de empresas haciendo trim() en ambos lados
-  // para tolerar espacios residuales entre el dict del backend y el valor del filtro.
+  // Lookup normalizado: busca la clave de empresas haciendo trim() en ambos lados.
   function _getEmpData() {
     const empresasDict = datos.permisionarios?.empresas;
     if (!empresasDict || !permisionario) return undefined;
-    console.log('[DataPort] datos.permisionarios.empresas:', empresasDict);
     const key = Object.keys(empresasDict).find(k => k.trim() === permisionario.trim());
-    console.log('[DataPort] permisionario buscado:', JSON.stringify(permisionario), '→ clave encontrada:', JSON.stringify(key));
     return key ? empresasDict[key] : undefined;
   }
 
-  // Reemplaza merc_ant/merc_act según el filtro activo.
-  // Para permisionario: usa datos.permisionarios.empresas[nombre].por_mes (comparativo real año-sobre-año).
-  // Para op/carga: usa filteredEvo que ya filtra esas dimensiones.
+  // Suma los campos _anterior/_actual de empData.por_mes según las ops activas.
+  // El backend expone: importacion_anterior, exportacion_anterior, removido_anterior (ídem _actual).
+  function _opSum(mesObj, suffix) {
+    return opKeys.reduce((s, op) => s + safe(mesObj[`${op}_${suffix}`]), 0);
+  }
+
+  // Reemplaza merc_ant/merc_act respetando el filtro de operación activo.
   function patchMercAct(srcList) {
     if (!hasNonMesesFilter) return srcList;
     if (permisionario) {
       const empData = _getEmpData();
       if (empData?.por_mes?.length) {
         const byMes = new Map(empData.por_mes.map(m => [m.mes, {
-          ant: safe(m.anio_anterior),
-          act: safe(m.anio_actual),
+          ant: _opSum(m, "anterior"),
+          act: _opSum(m, "actual"),
         }]));
         return srcList.map(r => {
           const e = byMes.get(r.mes);
           return e ? { ...r, merc_ant: e.ant, merc_act: e.act } : { ...r, merc_ant: 0, merc_act: 0 };
         });
       }
-      // Fallback si el backend aún no expone empresas
+      // Fallback: lee desde por_mes.empresas (sin apertura por operación)
       const permMes = datos.permisionarios?.por_mes || [];
       const byMes = new Map(permMes.map(m => [
         m.mes,
@@ -222,22 +224,20 @@ export function applyFilters(datos, filtros) {
 
   const cmpSrcFinal = patchMercAct(cmpSrc); // para totales (meses filtrados)
 
-  // Para el gráfico de línea: si hay permisionario con datos reales, construir desde empData.por_mes
-  // (año completo, merc_ant = año anterior real, merc_act = año actual real).
+  // Gráfico de línea: año completo para permisionario, con filtro de operación aplicado.
   const cmpChartData = (() => {
     if (permisionario) {
       const empData = _getEmpData();
-      console.log('[DataPort] cmpChartData empData:', empData);
       if (empData?.por_mes?.length) {
         return empData.por_mes.map(m => ({
           mes:        m.mes,
-          merc_ant:   safe(m.anio_anterior),
-          merc_act:   safe(m.anio_actual),
+          merc_ant:   _opSum(m, "anterior"),
+          merc_act:   _opSum(m, "actual"),
           teus_ant:   0, teus_act:   0,
           buques_ant: 0, buques_act: 0,
         }));
       }
-      return patchMercAct(cmpAll); // fallback: año completo con merc_act del año actual
+      return patchMercAct(cmpAll); // fallback: año completo
     }
     return cmpSrcFinal;
   })();
@@ -265,9 +265,8 @@ export function applyFilters(datos, filtros) {
     ? (datos.permisionarios?.ranking_anual || []).filter(e => e.empresa?.trim() === permisionario?.trim())
     : datos.permisionarios?.ranking_anual;
 
-  const totalPuerto = permisionario
-    ? (rankAnualFiltrado[0]?.toneladas ?? filteredEvo.reduce((s, r) => s + safe(r.toneladas), 0))
-    : datos.permisionarios?.total_puerto;
+  // totalMerc ya refleja el filtro de operación aplicado en buildEvo
+  const totalPuerto = permisionario ? totalMerc : datos.permisionarios?.total_puerto;
 
   const newPermisionarios = {
     ...datos.permisionarios,
