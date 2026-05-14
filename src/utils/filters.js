@@ -260,20 +260,76 @@ export function applyFilters(datos, filtros) {
   };
 
   // ── Permisionarios ───────────────────────────────────────────────────────────
-  const permMesSrc = filtrarMeses(datos.permisionarios?.por_mes || [], meses);
-  const rankAnualFiltrado = permisionario
-    ? (datos.permisionarios?.ranking_anual || []).filter(e => e.empresa?.trim() === permisionario?.trim())
-    : datos.permisionarios?.ranking_anual;
+  //
+  // Lógica reescrita desde cero. Tres dimensiones independientes que actúan juntas:
+  //   meses        → qué filas de por_mes incluir
+  //   operaciones  → qué campo sumar (importacion / exportacion / removido)
+  //   permisionario → qué empresa mostrar
+  //
+  // Fuente de verdad: datos.permisionarios.por_mes (contiene imp/exp/rem por empresa por mes)
 
-  // totalMerc ya refleja el filtro de operación aplicado en buildEvo
-  const totalPuerto = permisionario ? totalMerc : datos.permisionarios?.total_puerto;
+  // Toneladas de una empresa según las operaciones activas.
+  function _empOp(emp) {
+    if (!emp) return 0;
+    // Si están todas las ops activas, usa el total precalculado del backend (evita drift de float).
+    if (opKeys.length === ALL_OPS.length) return safe(emp.toneladas);
+    return opKeys.reduce((s, op) => s + safe(emp[op]), 0);
+  }
+
+  const permMesBase = datos.permisionarios?.por_mes || [];
+
+  // 1. Filtro de meses
+  const mesesToShow = meses.length > 0
+    ? permMesBase.filter(m => meses.includes(m.mes))
+    : permMesBase;
+
+  // 2. Para cada mes: filtro de empresa + operación
+  const permMesFiltrado = mesesToShow.map(mesEntry => {
+    let emps = mesEntry.empresas || [];
+
+    // Filtro de permisionario
+    if (permisionario) {
+      emps = emps.filter(e => e.empresa?.trim() === permisionario.trim());
+    }
+
+    // Filtro de operación (recalcula toneladas por empresa)
+    emps = emps
+      .map(e => ({ ...e, toneladas: _empOp(e) }))
+      .filter(e => e.toneladas > 0)
+      .sort((a, b) => b.toneladas - a.toneladas);
+
+    const total = emps.reduce((s, e) => s + e.toneladas, 0);
+
+    return {
+      mes:        mesEntry.mes,
+      total,
+      operadores: emps.length,
+      empresas:   emps,
+    };
+  });
+
+  // 3. Ranking anual: acumula desde por_mes ya filtrado
+  //    (así meses + operación + permisionario son consistentes con la vista mensual)
+  const rankingAcc = {};
+  permMesFiltrado.forEach(m => {
+    m.empresas.forEach(e => {
+      rankingAcc[e.empresa] = (rankingAcc[e.empresa] || 0) + e.toneladas;
+    });
+  });
+  const rankAnualFiltrado = Object.entries(rankingAcc)
+    .map(([empresa, toneladas]) => ({ empresa, toneladas }))
+    .sort((a, b) => b.toneladas - a.toneladas);
+
+  // 4. Total puerto: suma del ranking ya filtrado
+  const totalPuerto = rankAnualFiltrado.reduce((s, e) => s + safe(e.toneladas), 0)
+    || (!permisionario && !opKeys.length ? safe(datos.permisionarios?.total_puerto) : 0);
 
   const newPermisionarios = {
     ...datos.permisionarios,
     total_puerto:     totalPuerto,
-    total_operadores: permisionario ? (rankAnualFiltrado.length > 0 ? 1 : 0) : datos.permisionarios?.total_operadores,
+    total_operadores: permisionario ? (rankAnualFiltrado.length > 0 ? 1 : 0) : rankAnualFiltrado.length,
     ranking_anual:    rankAnualFiltrado,
-    por_mes:          permMesSrc,
+    por_mes:          permMesFiltrado,
   };
 
   return {
