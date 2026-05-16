@@ -11,6 +11,7 @@ import Buques from "./components/Buques";
 import Cargas from "./components/Cargas";
 import Comparativo from "./components/Comparativo";
 import Permisionarios from "./components/Permisionarios";
+import Informe from "./components/Informe";
 import Admin from "./components/Admin";
 import Filtros from "./components/Filtros";
 
@@ -20,6 +21,7 @@ const MODULOS = [
   { id: "cargas",         label: "Cargas",             icon: "📦" },
   { id: "comparativo",    label: "Comparativo",        icon: "📊" },
   { id: "permisionarios", label: "Permisionarios",     icon: "🏭" },
+  { id: "informe",        label: "Informe",            icon: "📄" },
 ];
 
 const FILTROS_INIT = { meses: [], operaciones: [], cargas: [], permisionario: "" };
@@ -178,6 +180,7 @@ function AppContent() {
               {pagina === "cargas"         && <Cargas         data={datos.cargas}         filtros={filtros} />}
               {pagina === "comparativo"    && <Comparativo    data={datos.comparativo}    filtros={filtros} />}
               {pagina === "permisionarios" && <Permisionarios data={datos.permisionarios} filtros={filtros} />}
+              {pagina === "informe"        && <Informe        data={datos}                filtros={filtros} />}
             </>
           )}
 
