@@ -79,11 +79,17 @@ function AppContent() {
   const permisDisponibles = rawData?.permisionarios?.ranking_anual?.map(p => p.empresa) || [];
   const enModulo          = pagina !== "config";
 
-  const hayFiltros = !!(
+  // Módulos sin filtros aplicables: se oculta el panel completo
+  const SIN_FILTROS    = ["buques", "infraestructura"];
+  const mostrarFiltros = enModulo && !SIN_FILTROS.includes(pagina);
+  // Permisionarios no usa "Tipo de carga"
+  const ocultarCargas  = pagina === "permisionarios";
+
+  const hayFiltros = mostrarFiltros && !!(
     filtros.permisionario ||
     filtros.meses.length > 0 ||
     filtros.operaciones.length > 0 ||
-    filtros.cargas.length > 0
+    (!ocultarCargas && filtros.cargas.length > 0)
   );
 
   return (
@@ -156,11 +162,14 @@ function AppContent() {
 
           {!loading && !error && datos && enModulo && (
             <>
-              <Filtros
-                meses={mesesDisponibles}
-                permisionarios={permisDisponibles}
-                onChange={setFiltros}
-              />
+              {mostrarFiltros && (
+                <Filtros
+                  meses={mesesDisponibles}
+                  permisionarios={permisDisponibles}
+                  onChange={setFiltros}
+                  ocultarCargas={ocultarCargas}
+                />
+              )}
 
               {hayFiltros && (
                 <div style={{
@@ -173,7 +182,7 @@ function AppContent() {
                   {filtros.permisionario && <span><strong>{filtros.permisionario}</strong></span>}
                   {filtros.meses.length > 0 && <span>{filtros.meses.join(" · ")}</span>}
                   {filtros.operaciones.length > 0 && <span>{filtros.operaciones.join(" · ")}</span>}
-                  {filtros.cargas.length > 0 && <span>{filtros.cargas.join(" · ")}</span>}
+                  {!ocultarCargas && filtros.cargas.length > 0 && <span>{filtros.cargas.join(" · ")}</span>}
                 </div>
               )}
 

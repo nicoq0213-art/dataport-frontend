@@ -7,7 +7,7 @@ const FILTROS_INIT = {
   meses: [], operaciones: [], cargas: [], permisionario: "",
 };
 
-export default function Filtros({ meses = [], permisionarios = [], onChange }) {
+export default function Filtros({ meses = [], permisionarios = [], onChange, ocultarCargas = false }) {
   const [open, setOpen]     = useState(false);
   const [filtros, setFiltros] = useState(FILTROS_INIT);
 
@@ -33,7 +33,7 @@ export default function Filtros({ meses = [], permisionarios = [], onChange }) {
   const activos =
     filtros.meses.length +
     filtros.operaciones.length +
-    filtros.cargas.length +
+    (ocultarCargas ? 0 : filtros.cargas.length) +
     (filtros.permisionario ? 1 : 0);
 
   return (
@@ -69,16 +69,18 @@ export default function Filtros({ meses = [], permisionarios = [], onChange }) {
             </div>
           </div>
 
-          <div className="filtros-group">
-            <div className="filtros-label">Tipo de carga</div>
-            <div className="filtros-pills">
-              {CARGAS.map(c => (
-                <button key={c}
-                  className={`filtros-pill ${filtros.cargas.includes(c) ? "active" : ""}`}
-                  onClick={() => toggle("cargas", c)}>{c}</button>
-              ))}
+          {!ocultarCargas && (
+            <div className="filtros-group">
+              <div className="filtros-label">Tipo de carga</div>
+              <div className="filtros-pills">
+                {CARGAS.map(c => (
+                  <button key={c}
+                    className={`filtros-pill ${filtros.cargas.includes(c) ? "active" : ""}`}
+                    onClick={() => toggle("cargas", c)}>{c}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {permisionarios.length > 0 && (
             <div className="filtros-group">

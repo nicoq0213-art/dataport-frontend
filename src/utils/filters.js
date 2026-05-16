@@ -78,6 +78,33 @@ function filtrarMeses(arr, meses) {
   return meses.length > 0 ? arr.filter(r => meses.includes(r.mes)) : arr;
 }
 
+// ── por_producto filtrado desde evolucion_productos ───────────────────────────
+// Nota: evolucion_productos (s2) no tiene apertura por operación ni forma,
+// por lo que solo se puede filtrar por período (meses).
+
+const PROD_COLS = [
+  { producto: "Aridos",                       key: "aridos"              },
+  { producto: "Crudo, combustibles y derivados", key: "crudo_derivados"  },
+  { producto: "Gases",                        key: "gases"               },
+  { producto: "Carga contenerizada",          key: "carga_contenerizada" },
+  { producto: "Productos minerales",          key: "productos_minerales" },
+  { producto: "Siderurgico / carga general",  key: "siderurgico"         },
+];
+
+function buildPorProducto(evoProdsSrc, meses, fallback) {
+  if (!evoProdsSrc || !evoProdsSrc.length) return fallback;
+  const src = filtrarMeses(evoProdsSrc, meses);
+  if (!src.length) return fallback;
+  const result = PROD_COLS
+    .map(({ producto, key }) => ({
+      producto,
+      toneladas: src.reduce((s, r) => s + safe(r[key]), 0),
+    }))
+    .filter(p => p.toneladas > 0)
+    .sort((a, b) => b.toneladas - a.toneladas);
+  return result.length > 0 ? result : fallback;
+}
+
 // ── por_forma filtrado desde evolucion_formas ─────────────────────────────────
 
 function buildPorForma(evoFormasSrc, formaKeys, opKeys, fallback) {
@@ -169,10 +196,18 @@ export function applyFilters(datos, filtros) {
     datos.cargas?.por_forma,
   );
 
+  // por_producto: filtrar por meses (s2 no tiene apertura por op/forma).
+  const newPorProducto = buildPorProducto(
+    datos.cargas?.evolucion_productos || [],
+    meses,
+    datos.cargas?.por_producto,
+  );
+
   const newCargas = {
     ...datos.cargas,
     evolucion_mensual: filteredEvo,
-    por_forma: newPorForma,
+    por_forma:         newPorForma,
+    por_producto:      newPorProducto,
   };
 
   // ── Comparativo ──────────────────────────────────────────────────────────────
