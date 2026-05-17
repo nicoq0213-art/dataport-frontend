@@ -94,7 +94,7 @@ function AppContent() {
 
   return (
     <div className="shell">
-      <div className="topbar">
+      <div className="topbar" style={{ display: loading ? 'none' : 'flex' }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button className="menu-btn" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menú">☰</button>
           <img src={LOGO_SRC} alt="Consorcio de Gestión del Puerto de Dock Sud"
