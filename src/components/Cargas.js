@@ -26,6 +26,7 @@ export default function Cargas({ data, filtros = {} }) {
 
   const { por_producto, evolucion_mensual, por_forma } = data;
   const operFiltro = filtros.operaciones || [];
+  const permFiltro = filtros.permisionario || "";
 
   const evolucion = evolucion_mensual || [];
 
@@ -73,21 +74,25 @@ export default function Cargas({ data, filtros = {} }) {
 
   return (
     <div>
-      <div className="sec">Por tipo de producto</div>
-      {(por_producto || []).map((p, i) => (
-        <div className="bar-row" key={i}>
-          <div className="bar-meta">
-            <span>{corregir(p.producto)}</span>
-            <span>{fmt(p.toneladas)} tn</span>
-          </div>
-          <div className="bar-track">
-            <div className="bar-fill" style={{
-              width: `${Math.round(p.toneladas / maxProd * 100)}%`,
-              background: p.toneladas / maxProd > 0.3 ? "#1A5FA8" : "#B5D4F4",
-            }} />
-          </div>
-        </div>
-      ))}
+      {!permFiltro && (
+        <>
+          <div className="sec">Por tipo de producto</div>
+          {(por_producto || []).map((p, i) => (
+            <div className="bar-row" key={i}>
+              <div className="bar-meta">
+                <span>{corregir(p.producto)}</span>
+                <span>{fmt(p.toneladas)} tn</span>
+              </div>
+              <div className="bar-track">
+                <div className="bar-fill" style={{
+                  width: `${Math.round(p.toneladas / maxProd * 100)}%`,
+                  background: p.toneladas / maxProd > 0.3 ? "#1A5FA8" : "#B5D4F4",
+                }} />
+              </div>
+            </div>
+          ))}
+        </>
+      )}
 
       <div className="divider" />
       <div className="chart-box">
@@ -97,7 +102,7 @@ export default function Cargas({ data, filtros = {} }) {
           : <div className="loading">Sin datos para los filtros seleccionados.</div>}
       </div>
 
-      {formasSections.map(secKey => (
+      {!permFiltro && formasSections.map(secKey => (
         <React.Fragment key={secKey}>
           <div className="divider" />
           <div className="sec">Por forma de presentación — {FORMA_LABEL[secKey]}</div>
