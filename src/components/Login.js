@@ -31,6 +31,9 @@ export default function Login() {
         <img src={LOGO_SRC} alt="Puerto de Dock Sud" className="login-logo" />
         <div className="login-title">Data Port</div>
         <div className="login-sub">Puerto de Dock Sud</div>
+        <div style={{ fontSize: 10, color: "#b0b8c4", letterSpacing: "0.05em", margin: "4px 0 16px" }}>
+          Un producto de NexBoards Analytics
+        </div>
         <form onSubmit={handleSubmit} className="login-form">
           <input
             className="login-input"
