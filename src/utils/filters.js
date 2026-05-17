@@ -79,8 +79,6 @@ function filtrarMeses(arr, meses) {
 }
 
 // ── por_producto filtrado desde evolucion_productos ───────────────────────────
-// Nota: evolucion_productos (s2) no tiene apertura por operación ni forma,
-// por lo que solo se puede filtrar por período (meses).
 
 const PROD_COLS = [
   { producto: "Aridos",                       key: "aridos"              },
@@ -91,14 +89,27 @@ const PROD_COLS = [
   { producto: "Siderurgico / carga general",  key: "siderurgico"         },
 ];
 
-function buildPorProducto(evoProdsSrc, meses, fallback) {
+// Mapeo forma (tipo de carga) → claves de producto en S2
+const FORMA_TO_PROD = {
+  granel_liquido:  ["crudo_derivados", "gases"],
+  granel_solido:   ["aridos", "productos_minerales"],
+  contenerizado:   ["carga_contenerizada"],
+  carga_general:   ["siderurgico"],
+};
+
+function buildPorProducto(evoProdsSrc, meses, formaKeys, scaleFactor, fallback) {
   if (!evoProdsSrc || !evoProdsSrc.length) return fallback;
   const src = filtrarMeses(evoProdsSrc, meses);
   if (!src.length) return fallback;
+  // Filtro por tipo de carga: solo productos que pertenecen a las formas activas
+  const activeProdKeys = formaKeys.length < ALL_FORMAS.length
+    ? formaKeys.flatMap(fk => FORMA_TO_PROD[fk] || [])
+    : PROD_COLS.map(p => p.key);
   const result = PROD_COLS
+    .filter(({ key }) => activeProdKeys.includes(key))
     .map(({ producto, key }) => ({
       producto,
-      toneladas: src.reduce((s, r) => s + safe(r[key]), 0),
+      toneladas: Math.round(src.reduce((s, r) => s + safe(r[key]), 0) * scaleFactor),
     }))
     .filter(p => p.toneladas > 0)
     .sort((a, b) => b.toneladas - a.toneladas);
@@ -196,10 +207,23 @@ export function applyFilters(datos, filtros) {
     datos.cargas?.por_forma,
   );
 
-  // por_producto: filtrar por meses (s2 no tiene apertura por op/forma).
+  // por_producto: conectado a todos los filtros.
+  // Tipo de carga: filtra productos visibles via FORMA_TO_PROD (mapeo exacto).
+  // Operación / Permisionario: escala proporcional via filteredEvo (forma excluida del
+  // factor para evitar doble conteo, ya que forma se maneja via product key filter).
+  const evoProds = datos.cargas?.evolucion_productos || [];
+  const totalProdBruto = filtrarMeses(evoProds, meses)
+    .reduce((s, r) => s + PROD_COLS.reduce((ss, { key }) => ss + safe(r[key]), 0), 0);
+  const evoForScale = formaKeys.length === ALL_FORMAS.length
+    ? filteredEvo
+    : buildEvo(datos, meses, opKeys, ALL_FORMAS, permisionario);
+  const totalForScale = evoForScale.reduce((s, r) => s + safe(r.toneladas), 0);
+  const scaleFactor = totalProdBruto > 0 ? totalForScale / totalProdBruto : 1;
   const newPorProducto = buildPorProducto(
-    datos.cargas?.evolucion_productos || [],
+    evoProds,
     meses,
+    formaKeys,
+    scaleFactor,
     datos.cargas?.por_producto,
   );
 
