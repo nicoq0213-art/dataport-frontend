@@ -1,4 +1,4 @@
-const BASE_URL = process.env.REACT_APP_API_URL || "https://web-production-93fa6.up.railway.app";
+const BASE_URL = process.env.REACT_APP_API_URL || "https://dataport-backend-production.up.railway.app";
 
 function getToken() {
   return localStorage.getItem("dp_token");
