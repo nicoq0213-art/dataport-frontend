@@ -37,45 +37,110 @@ const donaOptions = {
 
 export default function Buques({ data }) {
   const [open, setOpen]             = useState(false);
-  const [traficoFil, setTraficoFil] = useState([]);  // [] = todos
-  const [arbFil, setArbFil]         = useState([]);  // [] = todos
+  const [mesFil, setMesFil]         = useState([]);
+  const [traficoFil, setTraficoFil] = useState([]);
+  const [arbFil, setArbFil]         = useState([]);
 
   if (!data) return <div className="loading">Cargando buques…</div>;
 
-  const { trafico, arboladura } = data;
+  const { trafico, arboladura, evolucion_arboladura: evoArb = [] } = data;
+  const hasEvo = evoArb.length > 0;
 
-  function toggleT(key) {
-    setTraficoFil(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key]);
+  const allMeses = hasEvo ? evoArb.map(m => m.mes) : [];
+  const allTipos = hasEvo
+    ? [...new Set(evoArb.flatMap(m => m.arboladura.map(a => a.tipo)))]
+    : (arboladura || []).map(a => a.tipo);
+
+  function tog(setter) {
+    return val => setter(p => p.includes(val) ? p.filter(v => v !== val) : [...p, val]);
   }
-  function toggleA(tipo) {
-    setArbFil(p => p.includes(tipo) ? p.filter(t => t !== tipo) : [...p, tipo]);
+  function limpiar() { setMesFil([]); setTraficoFil([]); setArbFil([]); }
+
+  const activos = mesFil.length + traficoFil.length + arbFil.length;
+
+  // ── Computar datos filtrados ──────────────────────────────────────────────
+  let traficoVisible, arbTableData;
+
+  if (hasEvo) {
+    // 1. Filtrar por mes
+    const mesesData = mesFil.length > 0
+      ? evoArb.filter(m => mesFil.includes(m.mes))
+      : evoArb;
+
+    // 2. Agregar por tipo a través de los meses seleccionados
+    const arbByTipo = {};
+    mesesData.forEach(m => {
+      m.arboladura.forEach(a => {
+        if (!arbByTipo[a.tipo]) {
+          arbByTipo[a.tipo] = {
+            ultramar: { cantidad: 0, trn: 0 },
+            cmi:      { cantidad: 0, trn: 0 },
+            cabotaje: { cantidad: 0, trn: 0 },
+          };
+        }
+        ["ultramar", "cmi", "cabotaje"].forEach(t => {
+          arbByTipo[a.tipo][t].cantidad += a[t]?.cantidad || 0;
+          arbByTipo[a.tipo][t].trn      += a[t]?.trn      || 0;
+        });
+      });
+    });
+
+    // 3. Filtrar tipos
+    const tiposToShow = Object.keys(arbByTipo).filter(
+      tipo => arbFil.length === 0 || arbFil.includes(tipo)
+    );
+
+    // 4. Qué trafico keys sumar
+    const traficoKeys = traficoFil.length > 0 ? traficoFil : ["ultramar", "cmi", "cabotaje"];
+
+    // 5. KPI cards: valores reales cruzando trafico + tipos filtrados
+    const traficoComputed = {};
+    TRAFICO_TIPOS.forEach(({ key }) => {
+      traficoComputed[key] = {
+        buques: tiposToShow.reduce((s, t) => s + (arbByTipo[t]?.[key]?.cantidad || 0), 0),
+        trn:    tiposToShow.reduce((s, t) => s + (arbByTipo[t]?.[key]?.trn      || 0), 0),
+      };
+    });
+    traficoVisible = TRAFICO_TIPOS
+      .filter(t => traficoFil.length === 0 || traficoFil.includes(t.key))
+      .map(t => ({ ...t, data: traficoComputed[t.key] }));
+
+    // 6. Tabla y gráficos: tipo filtrado + trafico agregado
+    arbTableData = tiposToShow
+      .map(tipo => ({
+        tipo,
+        cantidad: traficoKeys.reduce((s, t) => s + (arbByTipo[tipo]?.[t]?.cantidad || 0), 0),
+        trn:      traficoKeys.reduce((s, t) => s + (arbByTipo[tipo]?.[t]?.trn      || 0), 0),
+      }))
+      .filter(a => a.cantidad > 0 || a.trn > 0)
+      .sort((a, b) => b.trn - a.trn);
+
+  } else {
+    // Fallback: usar datos agregados del DATA sheet
+    traficoVisible = TRAFICO_TIPOS
+      .filter(t => traficoFil.length === 0 || traficoFil.includes(t.key))
+      .map(t => ({ ...t, data: trafico?.[t.key] }));
+
+    arbTableData = (arboladura || [])
+      .filter(a => arbFil.length === 0 || arbFil.includes(a.tipo))
+      .map(a => ({ tipo: a.tipo, cantidad: a.cantidad, trn: Number(a.trn) }));
   }
-  function limpiar() { setTraficoFil([]); setArbFil([]); }
 
-  const activos = traficoFil.length + arbFil.length;
-
-  const traficoVisible = TRAFICO_TIPOS.filter(
-    t => traficoFil.length === 0 || traficoFil.includes(t.key)
-  );
-  const arbVisible = (arboladura || []).filter(
-    a => arbFil.length === 0 || arbFil.includes(a.tipo)
-  );
-
-  const totalBuquesFil = arbVisible.reduce((s, a) => s + (a.cantidad || 0), 0);
-  const totalTrnFil    = arbVisible.reduce((s, a) => s + (Number(a.trn) || 0), 0);
+  const totalBuquesFil = arbTableData.reduce((s, a) => s + (a.cantidad || 0), 0);
+  const totalTrnFil    = arbTableData.reduce((s, a) => s + (a.trn      || 0), 0);
 
   const donaTrn = {
-    labels: arbVisible.map(a => a.tipo),
-    datasets: [{ data: arbVisible.map(a => a.trn), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }],
+    labels: arbTableData.map(a => a.tipo),
+    datasets: [{ data: arbTableData.map(a => a.trn), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }],
   };
   const donaCant = {
-    labels: arbVisible.map(a => a.tipo),
-    datasets: [{ data: arbVisible.map(a => a.cantidad), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }],
+    labels: arbTableData.map(a => a.tipo),
+    datasets: [{ data: arbTableData.map(a => a.cantidad), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }],
   };
 
   return (
     <div>
-      {/* ── Filtros locales ────────────────────────────────── */}
+      {/* ── Filtros ────────────────────────────────────────── */}
       <div className="filtros-wrap">
         <button className="filtros-toggle" onClick={() => setOpen(!open)}>
           <span>▼ Filtros</span>
@@ -83,23 +148,35 @@ export default function Buques({ data }) {
         </button>
         {open && (
           <div className="filtros-panel">
+            {allMeses.length > 0 && (
+              <div className="filtros-group">
+                <div className="filtros-label">Período</div>
+                <div className="filtros-pills">
+                  {allMeses.map(m => (
+                    <button key={m}
+                      className={`filtros-pill ${mesFil.includes(m) ? "active" : ""}`}
+                      onClick={() => tog(setMesFil)(m)}>{m}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="filtros-group">
               <div className="filtros-label">Tipo de tráfico</div>
               <div className="filtros-pills">
                 {TRAFICO_TIPOS.map(t => (
                   <button key={t.key}
                     className={`filtros-pill ${traficoFil.includes(t.key) ? "active" : ""}`}
-                    onClick={() => toggleT(t.key)}>{t.label}</button>
+                    onClick={() => tog(setTraficoFil)(t.key)}>{t.label}</button>
                 ))}
               </div>
             </div>
             <div className="filtros-group">
               <div className="filtros-label">Tipo de arboladura</div>
               <div className="filtros-pills">
-                {(arboladura || []).map(a => (
-                  <button key={a.tipo}
-                    className={`filtros-pill ${arbFil.includes(a.tipo) ? "active" : ""}`}
-                    onClick={() => toggleA(a.tipo)}>{a.tipo}</button>
+                {allTipos.map(tipo => (
+                  <button key={tipo}
+                    className={`filtros-pill ${arbFil.includes(tipo) ? "active" : ""}`}
+                    onClick={() => tog(setArbFil)(tipo)}>{tipo}</button>
                 ))}
               </div>
             </div>
@@ -116,8 +193,8 @@ export default function Buques({ data }) {
         {traficoVisible.map(t => (
           <div key={t.key} className="kpi-card">
             <div className="kpi-label">{t.label}</div>
-            <div className="kpi-value">{fmt(trafico?.[t.key]?.buques)}</div>
-            <div className="kpi-unit">buques · {fmt(trafico?.[t.key]?.trn)} TRN</div>
+            <div className="kpi-value">{fmt(t.data?.buques)}</div>
+            <div className="kpi-unit">buques · {fmt(t.data?.trn)} TRN</div>
           </div>
         ))}
       </div>
@@ -131,7 +208,7 @@ export default function Buques({ data }) {
             <tr><th>Tipo de buque</th><th>Cantidad</th><th>TRN</th></tr>
           </thead>
           <tbody>
-            {arbVisible.map((a, i) => (
+            {arbTableData.map((a, i) => (
               <tr key={i}>
                 <td>{a.tipo}</td>
                 <td>{fmt(a.cantidad)}</td>
@@ -151,7 +228,7 @@ export default function Buques({ data }) {
       <div className="divider" />
       <div className="chart-box">
         <div className="chart-title">Distribución TRN por tipo de buque</div>
-        {arbVisible.length > 0
+        {arbTableData.length > 0
           ? <Doughnut data={donaTrn} options={donaOptions} height={220} />
           : <div className="loading">Sin datos para los filtros seleccionados.</div>}
       </div>
@@ -160,7 +237,7 @@ export default function Buques({ data }) {
       <div className="divider" />
       <div className="chart-box">
         <div className="chart-title">Distribución cantidad de buques por tipo</div>
-        {arbVisible.length > 0
+        {arbTableData.length > 0
           ? <Doughnut data={donaCant} options={donaOptions} height={220} />
           : <div className="loading">Sin datos para los filtros seleccionados.</div>}
       </div>
