@@ -36,13 +36,13 @@ const donaOptions = {
 };
 
 export default function Buques({ data }) {
-  if (!data) return <div className="loading">Cargando buques…</div>;
-
-  const { trafico, arboladura } = data;
-
   const [open, setOpen]             = useState(false);
   const [traficoFil, setTraficoFil] = useState([]);  // [] = todos
   const [arbFil, setArbFil]         = useState([]);  // [] = todos
+
+  if (!data) return <div className="loading">Cargando buques…</div>;
+
+  const { trafico, arboladura } = data;
 
   function toggleT(key) {
     setTraficoFil(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key]);
