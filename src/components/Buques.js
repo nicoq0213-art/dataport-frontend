@@ -12,6 +12,12 @@ const TRAFICO_TIPOS = [
   { label: "CMI",      key: "cmi"      },
 ];
 
+const MES_LABEL = {
+  "Ene": "Enero", "Feb": "Febrero", "Mar": "Marzo",    "Abr": "Abril",
+  "May": "Mayo",  "Jun": "Junio",   "Jul": "Julio",    "Ago": "Agosto",
+  "Sep": "Septiembre", "Oct": "Octubre", "Nov": "Noviembre", "Dic": "Diciembre",
+};
+
 function fmt(n) {
   if (!n && n !== 0) return "0";
   if (n >= 1000000) return (n / 1000000).toFixed(2) + "M";
@@ -155,7 +161,7 @@ export default function Buques({ data }) {
                   {allMeses.map(m => (
                     <button key={m}
                       className={`filtros-pill ${mesFil.includes(m) ? "active" : ""}`}
-                      onClick={() => tog(setMesFil)(m)}>{m}</button>
+                      onClick={() => tog(setMesFil)(m)}>{MES_LABEL[m] || m}</button>
                   ))}
                 </div>
               </div>
