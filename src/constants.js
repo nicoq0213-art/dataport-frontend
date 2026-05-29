@@ -14,4 +14,4 @@
 //   - Loader institucional (58×58 px)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const LOGO_SRC = "/logo-consorcio.png?v=2";
+export const LOGO_SRC = "/logo-dataport.png?v=2";
