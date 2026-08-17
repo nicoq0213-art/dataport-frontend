@@ -54,6 +54,38 @@ function topProductos(lista, top = 3) {
   return `${rest} y ${last.tipo || last.producto || last.carga}`;
 }
 
+// Rubro de carga que opera cada permisionario. Dato fijo del negocio (no está en
+// el Excel: cada empresa opera siempre el mismo tipo de carga, no cambia mes a mes).
+// Las claves usan las mismas etiquetas que filtros.cargas (Filtros.js / FORMA_KEY
+// en filters.js), para poder comparar directo sin traducir.
+const EMPRESA_RUBRO = {
+  "AGRECON S.A":                                    "Granel sólido",
+  "ANTIVARI S.A.":                                  "Granel líquido",
+  "BLINKI S.A.":                                    "Granel sólido",
+  "DESTILERIA ARGENTINA DE PETROLEO S.A. (DAPSA)":  "Granel líquido",
+  "COOPERATIVA DE TRABAJO DECOSUR LTDA.":           "Granel líquido",
+  "EXOLGAN S.A.":                                   "Contenerizado",
+  "LOGINTER S.A.":                                  "Carga gral.",
+  "MARYMAR S.A.":                                   "Granel sólido",
+  "MERANOL S.A.":                                   "Granel líquido",
+  "ORVOL S.A.":                                     "Granel líquido",
+  "PETRORIO S.A.":                                  "Granel líquido",
+  "RAIZEN ARGENTINA S.A.":                          "Granel líquido",
+  "SUYING S.A.":                                    "Granel sólido",
+  "ODFJELL TERMINALS TAGSA S.A.":                   "Granel líquido",
+  "Y.P.F. S.A.":                                    "Granel líquido",
+};
+
+// Normaliza nombres de empresa para el cruce con EMPRESA_RUBRO: tolera el punto
+// final que a veces falta/sobra entre el Excel y esta lista (ej. "AGRECON S.A").
+function _normEmpresa(s) {
+  return (s || "").trim().replace(/\.$/, "");
+}
+function _rubroDe(empresa) {
+  const norm = _normEmpresa(empresa);
+  return EMPRESA_RUBRO[norm] ?? EMPRESA_RUBRO[`${norm}.`];
+}
+
 // ── Generador de texto ANUAL ───────────────────────────────────────────────
 // filtros: { meses, operaciones, cargas, permisionario } — para adaptar el texto al contexto activo
 function generarAnual(data, filtros = {}) {
@@ -179,6 +211,18 @@ function generarAnual(data, filtros = {}) {
       parrafos.push(
         `Los datos corresponden exclusivamente a las operaciones de ${permFiltro} en el período seleccionado.`
       );
+    } else if (hayCargaFiltro) {
+      // Filtro de Tipo de carga: el ranking general mezcla empresas de todos los
+      // rubros (el Excel no registra el tipo de carga por permisionario), así que
+      // se recalcula solo entre las empresas del rubro filtrado, vía EMPRESA_RUBRO.
+      const rankingDelRubro = perm.ranking_anual.filter(e => cargaFiltro.includes(_rubroDe(e.empresa)));
+      if (rankingDelRubro.length > 0) {
+        const topEmp = topEmpresas(rankingDelRubro, 3);
+        let p = `En relación a los operadores portuarios del rubro filtrado, participaron ${fmtNum(rankingDelRubro.length)} empresas en el movimiento de cargas`;
+        if (topEmp) p += `, destacándose ${topEmp} como las principales en términos de volumen operado`;
+        p += ".";
+        parrafos.push(p);
+      }
     } else {
       const topEmp = topEmpresas(perm.ranking_anual, 3);
       let p = `En relación a los operadores portuarios, participaron ${fmtNum(perm.total_operadores || perm.ranking_anual.length)} empresas en el movimiento de cargas`;
