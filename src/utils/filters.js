@@ -254,18 +254,34 @@ export function applyFilters(datos, filtros) {
     return opKeys.reduce((s, op) => s + safe(mesObj[`${op}_${suffix}`]), 0);
   }
 
-  // TEUs y buques no se calculan por empresa (ver nota de negocio):
-  //  - Buques: no hay forma no ambigua de contarlos por permisionario → queda sin dato.
-  //  - TEUs: todos los contenedores del puerto son de Exolgan S.A., así que el total
-  //    del puerto (sin filtrar) es directamente el de Exolgan; para el resto es 0.
+  // TEUs y buques: reglas de negocio válidas para los 4 filtros (permisionario,
+  // tipo de carga, operación, período). Se calculan una sola vez acá y se aplican
+  // parejo en todas las ramas de patchMercAct, para que generarAnual y
+  // generarMensual (Informe.js) no tengan que duplicar esta lógica.
+  //
+  //  - Buques: no se pueden atribuir a una empresa, un tipo de carga ni una
+  //    operación puntual (ambigüedad real del origen de datos) → sin dato
+  //    salvo que el único filtro activo sea el de período.
+  //  - TEUs: todos los contenedores del puerto son de Exolgan S.A., así que el
+  //    total del puerto (sin filtrar por mes) es directamente el de Exolgan;
+  //    para el resto de las empresas es 0. Del mismo modo, el total de TEUs ya
+  //    "es" el total de carga Contenerizada, así que sigue siendo válido si el
+  //    filtro de Tipo de carga incluye Contenerizado (o no hay filtro). No hay
+  //    desglose de TEUs por operación → si hay filtro de Operación, sin dato.
   const EXOLGAN = "EXOLGAN S.A.";
+  const esExolgan = permisionario?.trim().toUpperCase() === EXOLGAN;
+  const cargaIncluyeContenerizado = formaKeys.includes("contenerizado");
+  const opCompleta = opKeys.length === ALL_OPS.length;
+
+  const teusAplica   = opCompleta && (!permisionario || esExolgan) && cargaIncluyeContenerizado;
+  const buquesAplica = opCompleta && !permisionario && formaKeys.length === ALL_FORMAS.length;
+
   function _teusBuquesPatch(row) {
-    const esExolgan = permisionario?.trim().toUpperCase() === EXOLGAN;
     return {
-      teus_ant:   esExolgan ? row.teus_ant : 0,
-      teus_act:   esExolgan ? row.teus_act : 0,
-      buques_ant: null,
-      buques_act: null,
+      teus_ant:   teusAplica ? row.teus_ant : 0,
+      teus_act:   teusAplica ? row.teus_act : 0,
+      buques_ant: buquesAplica ? row.buques_ant : null,
+      buques_act: buquesAplica ? row.buques_act : null,
     };
   }
 
@@ -294,7 +310,7 @@ export function applyFilters(datos, filtros) {
       return srcList.map(r => ({ ...r, merc_act: byMes.get(r.mes) ?? 0, ..._teusBuquesPatch(r) }));
     }
     const evoByMes = new Map(filteredEvo.map(e => [e.mes, safe(e.toneladas)]));
-    return srcList.map(r => ({ ...r, merc_act: evoByMes.get(r.mes) ?? r.merc_act }));
+    return srcList.map(r => ({ ...r, merc_act: evoByMes.get(r.mes) ?? r.merc_act, ..._teusBuquesPatch(r) }));
   }
 
   const cmpSrcFinal = patchMercAct(cmpSrc); // para totales (meses filtrados)

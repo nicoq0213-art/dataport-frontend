@@ -68,12 +68,25 @@ function generarAnual(data, filtros = {}) {
   const nav     = res.navegacion   || {};
   const totales = cmp.totales      || {};
 
-  const permFiltro  = filtros.permisionario || "";
-  const opFiltro    = filtros.operaciones   || [];
-  const hayOpFiltro = opFiltro.length > 0;
+  const permFiltro    = filtros.permisionario || "";
+  const opFiltro      = filtros.operaciones   || [];
+  const cargaFiltro   = filtros.cargas        || [];
+  const mesesFiltro   = filtros.meses         || [];
+  const hayOpFiltro    = opFiltro.length > 0;
+  const hayCargaFiltro = cargaFiltro.length > 0;
+  const hayMesesFiltro = mesesFiltro.length > 0;
   // Sujeto: empresa específica o "el puerto"
   const sujeto = permFiltro || "el puerto";
   const verb   = permFiltro ? "movilizó" : "movilizó el puerto";
+
+  // TEUs y buques: comparativo.totales ya viene filtrado por período + las reglas
+  // de negocio de permisionario/tipo de carga/operación (aplicadas en filters.js).
+  const teusAct   = totales.teus?.actual;
+  const buquesAct = totales.buques?.actual;
+
+  // Cantidad de contenedores y TRN no tienen desglose mensual en el sistema →
+  // solo son un dato real y filtrado en la vista completamente sin filtros.
+  const sinFiltros = !hayOpFiltro && !hayCargaFiltro && !permFiltro && !hayMesesFiltro;
 
   const parrafos = [];
 
@@ -103,24 +116,30 @@ function generarAnual(data, filtros = {}) {
     parrafos.push(p);
   }
 
-  // 2. Contenedores y TEUs — solo si no hay filtro de op/permisionario que los haga no aplicables
-  if (!hayOpFiltro && !permFiltro && cont.teus != null && safe(cont.teus) > 0) {
-    let p = `En materia de contenedores, se registraron ${fmtNum(cont.total_contenedores || 0)} unidades, equivalentes a ${fmtNum(cont.teus)} TEUs`;
-    if (cont.var_pct_teus != null) {
-      p += `, representando ${varFrase(cont.var_pct_teus)} en términos de TEUs`;
+  // 2. Contenedores y TEUs — teusAct ya viene en 0 desde applyFilters cuando no
+  // corresponde (operación filtrada, tipo de carga sin Contenerizado, permisionario
+  // != Exolgan). La cantidad de unidades (no solo TEUs) solo es un dato real sin filtros.
+  if (safe(teusAct) > 0) {
+    let p = sinFiltros && cont.total_contenedores != null
+      ? `En materia de contenedores, se registraron ${fmtNum(cont.total_contenedores || 0)} unidades, equivalentes a ${fmtNum(teusAct)} TEUs`
+      : `En materia de contenedores, se registraron ${fmtNum(teusAct)} TEUs`;
+    if (safe(totales.teus?.anterior) > 0) {
+      p += `, representando ${varFrase(totales.teus.var_pct)} en términos de TEUs`;
     }
     p += ".";
     parrafos.push(p);
   }
 
-  // 3. Buques — solo si no hay filtro de op/permisionario
-  if (!hayOpFiltro && !permFiltro && nav.total_buques != null && safe(nav.total_buques) > 0) {
-    let p = `En cuanto a la actividad de navegación, se registraron ${fmtNum(nav.total_buques)} buques durante el período`;
-    if (nav.total_trn != null) {
+  // 3. Buques — buquesAct ya viene en null/0 desde applyFilters cuando hay
+  // filtro de operación, tipo de carga o permisionario. TRN no tiene desglose
+  // mensual en el sistema → solo es un dato real sin filtros.
+  if (safe(buquesAct) > 0) {
+    let p = `En cuanto a la actividad de navegación, se registraron ${fmtNum(buquesAct)} buques durante el período`;
+    if (sinFiltros && nav.total_trn != null) {
       p += `, con un total de ${fmtNum(nav.total_trn)} TRN`;
     }
-    if (nav.var_pct_bq != null) {
-      p += `. El movimiento de buques refleja ${varFrase(nav.var_pct_bq)}`;
+    if (safe(totales.buques?.anterior) > 0) {
+      p += `. El movimiento de buques refleja ${varFrase(totales.buques.var_pct)}`;
     }
     p += ".";
     parrafos.push(p);
@@ -203,15 +222,18 @@ function generarMensual(data, filtros = {}) {
     const varMerc = compararConAnterior && merAnt > 0
       ? ((merAct - merAnt) / merAnt * 100) : null;
 
+    // TEUs y buques: m.teus_act/m.buques_act ya vienen en 0/null desde applyFilters
+    // cuando no corresponden (operación, tipo de carga sin Contenerizado o
+    // permisionario != Exolgan para TEUs; cualquiera de esos tres para buques).
+    // La variación interanual no depende de compararConAnterior: si el dato no
+    // aplica, teusAnt/bqAnt ya llegan en 0 y la frase se omite sola.
     const teusAct = safe(m.teus_act);
     const teusAnt = safe(m.teus_ant);
-    const varTeus = compararConAnterior && teusAnt > 0
-      ? ((teusAct - teusAnt) / teusAnt * 100) : null;
+    const varTeus = teusAnt > 0 ? ((teusAct - teusAnt) / teusAnt * 100) : null;
 
     const bqAct = safe(m.buques_act);
     const bqAnt = safe(m.buques_ant);
-    const varBq = compararConAnterior && bqAnt > 0
-      ? ((bqAct - bqAnt) / bqAnt * 100) : null;
+    const varBq = bqAnt > 0 ? ((bqAct - bqAnt) / bqAnt * 100) : null;
 
     const c = cargasPorMes[m.mes] || {};
 
@@ -230,8 +252,8 @@ function generarMensual(data, filtros = {}) {
     if (safe(c.removido)    > 0) partes.push(`removido: ${fmtTn(c.removido)}`);
     if (partes.length > 1) texto += `Desglose por operación: ${partes.join(", ")}. `;
 
-    // TEUs — solo si no hay filtro de op/forma (TEUs no filtrables por esas dimensiones)
-    if (!hayOpFiltro && !hayFormFiltro && teusAct > 0) {
+    // TEUs — ya viene en 0 cuando no corresponde (ver nota arriba)
+    if (teusAct > 0) {
       texto += `Se movilizaron ${fmtNum(teusAct)} TEUs`;
       if (varTeus !== null && Math.abs(varTeus) >= 0.1) {
         texto += `, con ${varFraseMes(varTeus)}`;
@@ -239,8 +261,8 @@ function generarMensual(data, filtros = {}) {
       texto += `. `;
     }
 
-    // Buques — mismo criterio
-    if (!hayOpFiltro && !hayFormFiltro && bqAct > 0) {
+    // Buques — ya viene en null/0 cuando no corresponde (ver nota arriba)
+    if (bqAct > 0) {
       texto += `El número de buques fue de ${fmtNum(bqAct)}`;
       if (varBq !== null && Math.abs(varBq) >= 0.1) {
         texto += `, representando ${varFraseMes(varBq)}`;
