@@ -254,6 +254,21 @@ export function applyFilters(datos, filtros) {
     return opKeys.reduce((s, op) => s + safe(mesObj[`${op}_${suffix}`]), 0);
   }
 
+  // TEUs y buques no se calculan por empresa (ver nota de negocio):
+  //  - Buques: no hay forma no ambigua de contarlos por permisionario → queda sin dato.
+  //  - TEUs: todos los contenedores del puerto son de Exolgan S.A., así que el total
+  //    del puerto (sin filtrar) es directamente el de Exolgan; para el resto es 0.
+  const EXOLGAN = "EXOLGAN S.A.";
+  function _teusBuquesPatch(row) {
+    const esExolgan = permisionario?.trim().toUpperCase() === EXOLGAN;
+    return {
+      teus_ant:   esExolgan ? row.teus_ant : 0,
+      teus_act:   esExolgan ? row.teus_act : 0,
+      buques_ant: null,
+      buques_act: null,
+    };
+  }
+
   // Reemplaza merc_ant/merc_act respetando el filtro de operación activo.
   function patchMercAct(srcList) {
     if (!hasNonMesesFilter) return srcList;
@@ -266,7 +281,8 @@ export function applyFilters(datos, filtros) {
         }]));
         return srcList.map(r => {
           const e = byMes.get(r.mes);
-          return e ? { ...r, merc_ant: e.ant, merc_act: e.act } : { ...r, merc_ant: 0, merc_act: 0 };
+          const base = e ? { merc_ant: e.ant, merc_act: e.act } : { merc_ant: 0, merc_act: 0 };
+          return { ...r, ...base, ..._teusBuquesPatch(r) };
         });
       }
       // Fallback: lee desde por_mes.empresas (sin apertura por operación)
@@ -275,7 +291,7 @@ export function applyFilters(datos, filtros) {
         m.mes,
         safe((m.empresas || []).find(e => e.empresa?.trim() === permisionario?.trim())?.toneladas),
       ]));
-      return srcList.map(r => ({ ...r, merc_act: byMes.get(r.mes) ?? 0 }));
+      return srcList.map(r => ({ ...r, merc_act: byMes.get(r.mes) ?? 0, ..._teusBuquesPatch(r) }));
     }
     const evoByMes = new Map(filteredEvo.map(e => [e.mes, safe(e.toneladas)]));
     return srcList.map(r => ({ ...r, merc_act: evoByMes.get(r.mes) ?? r.merc_act }));
