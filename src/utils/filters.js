@@ -26,6 +26,38 @@ const OPER_KEY = {
 const ALL_OPS   = ["importacion", "exportacion", "removido"];
 const ALL_FORMAS = ["granel_liquido", "granel_solido", "contenerizado", "carga_general"];
 
+// Rubro de carga que opera cada permisionario. Dato fijo del negocio (no está en
+// el Excel: cada empresa opera siempre el mismo tipo de carga, no cambia mes a
+// mes). Las claves de rubro usan las mismas etiquetas que FORMA_KEY, para poder
+// traducir directo a formaKeys sin una segunda tabla de mapeo.
+const EMPRESA_RUBRO = {
+  "AGRECON S.A":                                    "Granel sólido",
+  "ANTIVARI S.A.":                                  "Granel líquido",
+  "BLINKI S.A.":                                    "Granel sólido",
+  "DESTILERIA ARGENTINA DE PETROLEO S.A. (DAPSA)":  "Granel líquido",
+  "COOPERATIVA DE TRABAJO DECOSUR LTDA.":           "Granel líquido",
+  "EXOLGAN S.A.":                                   "Contenerizado",
+  "LOGINTER S.A.":                                  "Carga gral.",
+  "MARYMAR S.A.":                                   "Granel sólido",
+  "MERANOL S.A.":                                   "Granel líquido",
+  "ORVOL S.A.":                                     "Granel líquido",
+  "PETRORIO S.A.":                                  "Granel líquido",
+  "RAIZEN ARGENTINA S.A.":                          "Granel líquido",
+  "SUYING S.A.":                                    "Granel sólido",
+  "ODFJELL TERMINALS TAGSA S.A.":                   "Granel líquido",
+  "Y.P.F. S.A.":                                    "Granel líquido",
+};
+
+// Normaliza nombres de empresa para el cruce con EMPRESA_RUBRO: tolera el punto
+// final que a veces falta/sobra entre el Excel y esta lista (ej. "AGRECON S.A").
+function _normEmpresa(s) {
+  return (s || "").trim().replace(/\.$/, "");
+}
+function _rubroDe(empresa) {
+  const norm = _normEmpresa(empresa);
+  return EMPRESA_RUBRO[norm] ?? EMPRESA_RUBRO[`${norm}.`];
+}
+
 function safe(v) { return (v == null) ? 0 : Number(v) || 0; }
 function varPct(a, b) { return a > 0 ? ((b - a) / a * 100) : 0; }
 
@@ -429,5 +461,234 @@ export function applyFilters(datos, filtros) {
     cargas:         newCargas,
     comparativo:    newComparativo,
     permisionarios: newPermisionarios,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Motor central del módulo Informe (Anual / Mensual)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// A diferencia de applyFilters() (que arma la vista propia de cada módulo:
+// Resumen, Cargas, Comparativo, Permisionarios — sin tocar), esta función es el
+// ÚNICO lugar que decide, para cualquier combinación de filtros, qué dato mostrar
+// y de qué fuente más granular sacarlo. generarAnual/generarMensual (Informe.js)
+// no deciden nada: solo leen los campos ya resueltos acá y arman las frases.
+//
+// Fuentes granulares disponibles en el sistema, de más a menos detalladas:
+//   - permisionarios.por_mes     → empresa × operación × mes        (toneladas, real)
+//   - cargas.evolucion_formas    → tipo de carga × operación × mes  (toneladas, todo el puerto)
+//   - cargas.evolucion_mensual   → operación × mes                  (toneladas, todo el puerto)
+//   - comparativo.por_mes        → mes                              (toneladas, TEUs, buques — actual + año anterior, todo el puerto)
+//   - resumen.contenedores/navegacion → un único agregado anual, sin mes ni ninguna otra dimensión
+//
+// La única forma de cruzar "permisionario" con "tipo de carga" es EMPRESA_RUBRO
+// (arriba), porque el Excel no registra esa relación en ningún lado.
+//
+// Excepciones reales (documentadas, no atajos): no existe en el sistema, a
+// ningún nivel de detalle, el dato de "buques por empresa" (ambigüedad real del
+// origen — un buque puede generar varias filas sin ser un nuevo ingreso), ni la
+// "cantidad de contenedores"/TRN por mes (solo hay un agregado anual único), ni
+// el tipo de producto específico (Aridos vs. Minerales, etc.) por empresa (solo
+// se conoce el rubro completo, vía EMPRESA_RUBRO).
+
+function _getEmpresaData(datos, permisionario) {
+  const empresasDict = datos.permisionarios?.empresas;
+  if (!empresasDict || !permisionario) return undefined;
+  const key = Object.keys(empresasDict).find(k => k.trim() === permisionario.trim());
+  return key ? empresasDict[key] : undefined;
+}
+
+export function buildInformeData(datos, filtros = {}) {
+  if (!datos) return null;
+
+  const meses         = filtros.meses         || [];
+  const operaciones   = filtros.operaciones   || [];
+  const cargasFiltro  = filtros.cargas        || [];
+  const permisionario = filtros.permisionario || "";
+
+  const opKeys    = operaciones.length  > 0 ? operaciones.map(o => OPER_KEY[o]).filter(Boolean)  : ALL_OPS;
+  const formaKeys = cargasFiltro.length > 0 ? cargasFiltro.map(c => FORMA_KEY[c]).filter(Boolean) : ALL_FORMAS;
+  const opCompleta    = opKeys.length === ALL_OPS.length;
+  const formaCompleta = formaKeys.length === ALL_FORMAS.length;
+
+  const rubro    = permisionario ? _rubroDe(permisionario) : null;
+  const rubroKey = rubro ? FORMA_KEY[rubro] : null;
+  // Si hay permisionario Y tipo de carga filtrados a la vez y no coinciden, la
+  // empresa no opera ese rubro: no hay nada real que mostrar en ninguna métrica
+  // (ni toneladas, ni TEUs, ni ranking).
+  const permCompatibleConCarga = !permisionario || formaCompleta || (rubroKey && formaKeys.includes(rubroKey));
+
+  const sinFiltros = opCompleta && formaCompleta && !permisionario && meses.length === 0;
+
+  // ── 1. Toneladas: fuente única de verdad para todo el módulo ───────────────
+  const evoBase = buildEvo(datos, meses, opKeys, formaKeys, permisionario);
+  const evoCompatible = evoBase.map(r => permCompatibleConCarga
+    ? r
+    : { mes: r.mes, toneladas: 0, importacion: 0, exportacion: 0, removido: 0 });
+
+  // "Anterior" granular: solo existe en dos casos (ver excepciones documentadas
+  // arriba de por qué no hay más). En cualquier otra combinación, no hay dato
+  // real de año anterior a este nivel de detalle → queda en null, no se inventa.
+  const anteriorPorMes = new Map();
+  if (permisionario && permCompatibleConCarga) {
+    const empData = _getEmpresaData(datos, permisionario);
+    (empData?.por_mes || []).forEach(m => {
+      anteriorPorMes.set(m.mes, opKeys.reduce((s, op) => s + safe(m[`${op}_anterior`]), 0));
+    });
+  } else if (opCompleta && formaCompleta && !permisionario) {
+    (datos.comparativo?.por_mes || []).forEach(r => anteriorPorMes.set(r.mes, safe(r.merc_ant)));
+  }
+
+  const toneladasPorMes = evoCompatible.map(r => ({
+    mes:         r.mes,
+    total:       safe(r.toneladas),
+    importacion: safe(r.importacion),
+    exportacion: safe(r.exportacion),
+    removido:    safe(r.removido),
+    anterior:    anteriorPorMes.has(r.mes) ? anteriorPorMes.get(r.mes) : null,
+  }));
+
+  const toneladas = {
+    total:       toneladasPorMes.reduce((s, r) => s + r.total, 0),
+    importacion: toneladasPorMes.reduce((s, r) => s + r.importacion, 0),
+    exportacion: toneladasPorMes.reduce((s, r) => s + r.exportacion, 0),
+    removido:    toneladasPorMes.reduce((s, r) => s + r.removido, 0),
+    anterior:    null,
+    var_pct:     null,
+    por_mes:     toneladasPorMes,
+  };
+  if (toneladasPorMes.some(r => r.anterior != null)) {
+    const ant = toneladasPorMes.reduce((s, r) => s + safe(r.anterior), 0);
+    toneladas.anterior = ant;
+    toneladas.var_pct  = ant > 0 ? varPct(ant, toneladas.total) : null;
+  }
+
+  // ── 2. TEUs y buques ─────────────────────────────────────────────────────
+  // TEUs: todos los contenedores del puerto son del rubro Contenerizado (hoy,
+  // únicamente Exolgan S.A.), así que el total del puerto (comparativo.por_mes,
+  // ya recortado por mes) sigue siendo válido si el permisionario filtrado es de
+  // ese rubro, o si el tipo de carga filtrado lo incluye. No hay desglose de
+  // TEUs por operación en ningún lado → si hay filtro de Operación, sin dato.
+  const teusAplica = opCompleta
+    && (!permisionario || rubro === "Contenerizado")
+    && (formaCompleta || formaKeys.includes("contenerizado"));
+
+  // Buques: no se pueden atribuir a una empresa, un tipo de carga ni una
+  // operación puntual (excepción real, documentada arriba) → solo con período.
+  const buquesAplica = opCompleta && !permisionario && formaCompleta;
+
+  const cmpPorMes = filtrarMeses(datos.comparativo?.por_mes || [], meses);
+
+  function _serieAplicada(campoAct, campoAnt, aplica) {
+    const por_mes = cmpPorMes.map(r => ({
+      mes:      r.mes,
+      actual:   aplica ? safe(r[campoAct]) : 0,
+      anterior: aplica ? safe(r[campoAnt]) : 0,
+    }));
+    const actual   = por_mes.reduce((s, r) => s + r.actual, 0);
+    const anterior = por_mes.reduce((s, r) => s + r.anterior, 0);
+    return {
+      aplica,
+      actual:   aplica ? actual : null,
+      anterior: aplica ? anterior : null,
+      var_pct:  aplica && anterior > 0 ? varPct(anterior, actual) : null,
+      por_mes,
+    };
+  }
+
+  const teus   = _serieAplicada("teus_act",   "teus_ant",   teusAplica);
+  const buques = _serieAplicada("buques_act", "buques_ant", buquesAplica);
+
+  // ── 3. Cantidad de contenedores y TRN ───────────────────────────────────
+  // Únicos agregados anuales sin ninguna dimensión mensual expuesta por el
+  // backend → dato real solo en la vista completamente sin filtros.
+  const contenedoresTotal = { aplica: sinFiltros, valor: sinFiltros ? (datos.resumen?.contenedores?.total_contenedores ?? null) : null };
+  const trn                = { aplica: sinFiltros, valor: sinFiltros ? (datos.resumen?.navegacion?.total_trn ?? null) : null };
+
+  // ── 4. Tipos de carga ────────────────────────────────────────────────────
+  // Sin permisionario: hay dos fuentes posibles.
+  //  - Sin filtro de Operación: evolucion_productos (S2) da el desglose más
+  //    rico (6 categorías de producto), correctamente filtrado por carga+mes.
+  //  - Con filtro de Operación: evolucion_productos no tiene esa dimensión (no
+  //    se puede saber qué parte de "Aridos" es importación vs. removido), así
+  //    que se reconstruye desde evolucion_formas (S3: forma×operación×mes),
+  //    que sí la tiene — 4 categorías más generales, pero reales.
+  // Con permisionario: no hay desglose de producto ni de forma por empresa en
+  // ningún lado (solo el rubro completo, vía EMPRESA_RUBRO) → sin dato.
+  let tiposDeCarga = { aplica: false, nivel: null, items: [] };
+  if (!permisionario) {
+    if (opCompleta) {
+      const evoProds = datos.cargas?.evolucion_productos || [];
+      const totalProdBruto = filtrarMeses(evoProds, meses)
+        .reduce((s, r) => s + PROD_COLS.reduce((ss, { key }) => ss + safe(r[key]), 0), 0);
+      const scaleFactor = totalProdBruto > 0 ? toneladas.total / totalProdBruto : 1;
+      const porProducto = buildPorProducto(evoProds, meses, formaKeys, scaleFactor, null) || [];
+      tiposDeCarga = {
+        aplica: porProducto.length > 0,
+        nivel:  "producto",
+        items:  porProducto.map(p => ({ nombre: p.producto, toneladas: p.toneladas })),
+      };
+    } else {
+      const evoFormasMes = filtrarMeses(datos.cargas?.evolucion_formas || [], meses);
+      const porForma = buildPorForma(evoFormasMes, formaKeys, opKeys, null) || { importacion: [], exportacion: [], removido: [] };
+      const acc = {};
+      ["importacion", "exportacion", "removido"].forEach(op => {
+        if (!opKeys.includes(op)) return;
+        (porForma[op] || []).forEach(f => { acc[f.forma] = (acc[f.forma] || 0) + f.toneladas; });
+      });
+      const items = Object.entries(acc)
+        .map(([nombre, ton]) => ({ nombre, toneladas: ton }))
+        .filter(i => i.toneladas > 0)
+        .sort((a, b) => b.toneladas - a.toneladas);
+      tiposDeCarga = { aplica: items.length > 0, nivel: "forma", items };
+    }
+  }
+
+  // ── 5. Ranking de empresas ───────────────────────────────────────────────
+  // Real a nivel permisionario × operación × mes (PERMISIONARIOS). El tipo de
+  // carga no está en esa hoja → se cruza vía EMPRESA_RUBRO, igual que arriba.
+  function _empresaOp(emp) {
+    if (!emp) return 0;
+    if (opCompleta) return safe(emp.toneladas);
+    return opKeys.reduce((s, op) => s + safe(emp[op]), 0);
+  }
+
+  const permMesBase = filtrarMeses(datos.permisionarios?.por_mes || [], meses);
+  const permMesFiltrado = permMesBase.map(mesEntry => {
+    let emps = mesEntry.empresas || [];
+    if (permisionario) {
+      // Si el permisionario filtrado no opera el rubro también filtrado, no
+      // tiene nada real que aportar al ranking (mismo criterio que toneladas/TEUs).
+      emps = permCompatibleConCarga
+        ? emps.filter(e => e.empresa?.trim() === permisionario.trim())
+        : [];
+    } else if (!formaCompleta) {
+      emps = emps.filter(e => {
+        const r = _rubroDe(e.empresa);
+        return r && formaKeys.includes(FORMA_KEY[r]);
+      });
+    }
+    return emps.map(e => ({ ...e, toneladas: _empresaOp(e) })).filter(e => e.toneladas > 0);
+  });
+
+  const rankingAcc = {};
+  permMesFiltrado.forEach(emps => emps.forEach(e => {
+    rankingAcc[e.empresa] = (rankingAcc[e.empresa] || 0) + e.toneladas;
+  }));
+  const ranking = Object.entries(rankingAcc)
+    .map(([empresa, toneladas]) => ({ empresa, toneladas }))
+    .sort((a, b) => b.toneladas - a.toneladas);
+
+  const empresas = { ranking, total_operadores: ranking.length };
+
+  return {
+    filtros: { meses, operaciones, cargas: cargasFiltro, permisionario },
+    toneladas,
+    teus,
+    buques,
+    contenedoresTotal,
+    trn,
+    tiposDeCarga,
+    empresas,
   };
 }

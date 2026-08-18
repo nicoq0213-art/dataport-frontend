@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { buildInformeData } from "../utils/filters";
 
 // ── Utilidades de formato ──────────────────────────────────────────────────
 function fmtTn(n) {
@@ -45,187 +46,113 @@ function topEmpresas(lista, top = 3) {
   return `${rest} y ${last.empresa}`;
 }
 
-function topProductos(lista, top = 3) {
+function topNombres(lista, top = 3) {
   if (!lista || lista.length === 0) return null;
   const primeros = lista.slice(0, top);
-  if (primeros.length === 1) return primeros[0].tipo || primeros[0].producto || primeros[0].carga;
+  if (primeros.length === 1) return primeros[0].nombre;
   const last = primeros[primeros.length - 1];
-  const rest = primeros.slice(0, -1).map(p => p.tipo || p.producto || p.carga).join(", ");
-  return `${rest} y ${last.tipo || last.producto || last.carga}`;
-}
-
-// Rubro de carga que opera cada permisionario. Dato fijo del negocio (no está en
-// el Excel: cada empresa opera siempre el mismo tipo de carga, no cambia mes a mes).
-// Las claves usan las mismas etiquetas que filtros.cargas (Filtros.js / FORMA_KEY
-// en filters.js), para poder comparar directo sin traducir.
-const EMPRESA_RUBRO = {
-  "AGRECON S.A":                                    "Granel sólido",
-  "ANTIVARI S.A.":                                  "Granel líquido",
-  "BLINKI S.A.":                                    "Granel sólido",
-  "DESTILERIA ARGENTINA DE PETROLEO S.A. (DAPSA)":  "Granel líquido",
-  "COOPERATIVA DE TRABAJO DECOSUR LTDA.":           "Granel líquido",
-  "EXOLGAN S.A.":                                   "Contenerizado",
-  "LOGINTER S.A.":                                  "Carga gral.",
-  "MARYMAR S.A.":                                   "Granel sólido",
-  "MERANOL S.A.":                                   "Granel líquido",
-  "ORVOL S.A.":                                     "Granel líquido",
-  "PETRORIO S.A.":                                  "Granel líquido",
-  "RAIZEN ARGENTINA S.A.":                          "Granel líquido",
-  "SUYING S.A.":                                    "Granel sólido",
-  "ODFJELL TERMINALS TAGSA S.A.":                   "Granel líquido",
-  "Y.P.F. S.A.":                                    "Granel líquido",
-};
-
-// Normaliza nombres de empresa para el cruce con EMPRESA_RUBRO: tolera el punto
-// final que a veces falta/sobra entre el Excel y esta lista (ej. "AGRECON S.A").
-function _normEmpresa(s) {
-  return (s || "").trim().replace(/\.$/, "");
-}
-function _rubroDe(empresa) {
-  const norm = _normEmpresa(empresa);
-  return EMPRESA_RUBRO[norm] ?? EMPRESA_RUBRO[`${norm}.`];
+  const rest = primeros.slice(0, -1).map(p => p.nombre).join(", ");
+  return `${rest} y ${last.nombre}`;
 }
 
 // ── Generador de texto ANUAL ───────────────────────────────────────────────
-// filtros: { meses, operaciones, cargas, permisionario } — para adaptar el texto al contexto activo
-function generarAnual(data, filtros = {}) {
-  if (!data) return [];
-  const res    = data.resumen        || {};
-  const cmp    = data.comparativo    || {};
-  const perm   = data.permisionarios || {};
-  const cargas = data.cargas         || {};
+// Todas las decisiones de "¿este dato es válido con este filtro?" ya se
+// resolvieron en buildInformeData() (filters.js). Acá solo se arman frases a
+// partir de valores ya filtrados: si un campo no aplica, llega en null/0 y el
+// párrafo correspondiente se omite solo. No hay ningún "si hay filtro X, hago Y".
+function generarAnual(informe, filtros = {}) {
+  if (!informe) return [];
+  const { toneladas, teus, buques, contenedoresTotal, trn, tiposDeCarga, empresas } = informe;
 
-  const merc    = res.mercaderias  || {};
-  const cont    = res.contenedores || {};
-  const nav     = res.navegacion   || {};
-  const totales = cmp.totales      || {};
-
-  const permFiltro    = filtros.permisionario || "";
-  const opFiltro      = filtros.operaciones   || [];
-  const cargaFiltro   = filtros.cargas        || [];
-  const mesesFiltro   = filtros.meses         || [];
-  const hayOpFiltro    = opFiltro.length > 0;
-  const hayCargaFiltro = cargaFiltro.length > 0;
-  const hayMesesFiltro = mesesFiltro.length > 0;
-  // Sujeto: empresa específica o "el puerto"
+  // Estas dos son las únicas lecturas de "filtros" en todo el generador, y
+  // ambas son elección de palabras sobre un dato ya resuelto (el nombre de la
+  // empresa filtrada, si el texto debe aclarar "del rubro filtrado"), no una
+  // decisión de qué dato mostrar.
+  const permFiltro  = filtros.permisionario || "";
+  const hayCargaFiltro = (filtros.cargas || []).length > 0;
   const sujeto = permFiltro || "el puerto";
-  const verb   = permFiltro ? "movilizó" : "movilizó el puerto";
-
-  // TEUs y buques: comparativo.totales ya viene filtrado por período + las reglas
-  // de negocio de permisionario/tipo de carga/operación (aplicadas en filters.js).
-  const teusAct   = totales.teus?.actual;
-  const buquesAct = totales.buques?.actual;
-
-  // Cantidad de contenedores y TRN no tienen desglose mensual en el sistema →
-  // solo son un dato real y filtrado en la vista completamente sin filtros.
-  const sinFiltros = !hayOpFiltro && !hayCargaFiltro && !permFiltro && !hayMesesFiltro;
 
   const parrafos = [];
 
   // 1. Mercaderías totales
-  if (merc.total != null && merc.total > 0) {
-    // Solo mencionar variación cuando está disponible (es null cuando hay filtros activos)
+  if (toneladas.total > 0) {
     let p = permFiltro
-      ? `Durante el período analizado, ${sujeto} movilizó un total de ${fmtTn(merc.total)}`
-      : `Durante el período analizado, el puerto movilizó un total de ${fmtTn(merc.total)}`;
+      ? `Durante el período analizado, ${sujeto} movilizó un total de ${fmtTn(toneladas.total)}`
+      : `Durante el período analizado, el puerto movilizó un total de ${fmtTn(toneladas.total)}`;
 
-    if (merc.var_pct != null) {
-      p += `, registrando ${varFrase(merc.var_pct)}`;
+    if (toneladas.var_pct != null) {
+      p += `, registrando ${varFrase(toneladas.var_pct)}`;
     }
     p += ".";
 
-    // Desglose por operación: solo mencionar las que tienen valor > 0
     const partes = [];
-    if (safe(merc.importacion) > 0) partes.push(`importación: ${fmtTn(merc.importacion)}`);
-    if (safe(merc.exportacion) > 0) partes.push(`exportación: ${fmtTn(merc.exportacion)}`);
-    if (safe(merc.removido)    > 0) partes.push(`removido: ${fmtTn(merc.removido)}`);
-    if (partes.length > 1) {
-      p += ` El desglose fue: ${partes.join(", ")}.`;
-    } else if (partes.length === 1 && hayOpFiltro) {
-      // Filtro de una sola operación: ya está implícito en el total, no repetir
-    }
+    if (toneladas.importacion > 0) partes.push(`importación: ${fmtTn(toneladas.importacion)}`);
+    if (toneladas.exportacion > 0) partes.push(`exportación: ${fmtTn(toneladas.exportacion)}`);
+    if (toneladas.removido    > 0) partes.push(`removido: ${fmtTn(toneladas.removido)}`);
+    if (partes.length > 1) p += ` El desglose fue: ${partes.join(", ")}.`;
 
     parrafos.push(p);
   }
 
-  // 2. Contenedores y TEUs — teusAct ya viene en 0 desde applyFilters cuando no
-  // corresponde (operación filtrada, tipo de carga sin Contenerizado, permisionario
-  // != Exolgan). La cantidad de unidades (no solo TEUs) solo es un dato real sin filtros.
-  if (safe(teusAct) > 0) {
-    let p = sinFiltros && cont.total_contenedores != null
-      ? `En materia de contenedores, se registraron ${fmtNum(cont.total_contenedores || 0)} unidades, equivalentes a ${fmtNum(teusAct)} TEUs`
-      : `En materia de contenedores, se registraron ${fmtNum(teusAct)} TEUs`;
-    if (safe(totales.teus?.anterior) > 0) {
-      p += `, representando ${varFrase(totales.teus.var_pct)} en términos de TEUs`;
+  // 2. Contenedores y TEUs
+  if (safe(teus.actual) > 0) {
+    let p = contenedoresTotal.aplica && contenedoresTotal.valor != null
+      ? `En materia de contenedores, se registraron ${fmtNum(contenedoresTotal.valor)} unidades, equivalentes a ${fmtNum(teus.actual)} TEUs`
+      : `En materia de contenedores, se registraron ${fmtNum(teus.actual)} TEUs`;
+    if (safe(teus.anterior) > 0) {
+      p += `, representando ${varFrase(teus.var_pct)} en términos de TEUs`;
     }
     p += ".";
     parrafos.push(p);
   }
 
-  // 3. Buques — buquesAct ya viene en null/0 desde applyFilters cuando hay
-  // filtro de operación, tipo de carga o permisionario. TRN no tiene desglose
-  // mensual en el sistema → solo es un dato real sin filtros.
-  if (safe(buquesAct) > 0) {
-    let p = `En cuanto a la actividad de navegación, se registraron ${fmtNum(buquesAct)} buques durante el período`;
-    if (sinFiltros && nav.total_trn != null) {
-      p += `, con un total de ${fmtNum(nav.total_trn)} TRN`;
+  // 3. Buques
+  if (safe(buques.actual) > 0) {
+    let p = `En cuanto a la actividad de navegación, se registraron ${fmtNum(buques.actual)} buques durante el período`;
+    if (trn.aplica && trn.valor != null) {
+      p += `, con un total de ${fmtNum(trn.valor)} TRN`;
     }
-    if (safe(totales.buques?.anterior) > 0) {
-      p += `. El movimiento de buques refleja ${varFrase(totales.buques.var_pct)}`;
+    if (safe(buques.anterior) > 0) {
+      p += `. El movimiento de buques refleja ${varFrase(buques.var_pct)}`;
     }
     p += ".";
     parrafos.push(p);
   }
 
-  // 4. Comparativo vs año anterior — solo cuando hay data anterior significativa y sin filtros de op/forma
-  if (!hayOpFiltro && totales.mercaderias?.anterior != null && totales.mercaderias?.actual != null) {
-    const ant = safe(totales.mercaderias.anterior);
-    const act = safe(totales.mercaderias.actual);
-    if (ant > 0 && act > 0) {
-      const diff = act - ant;
-      const diffStr = diff >= 0
-        ? `superior en ${fmtTn(Math.abs(diff))} al año anterior`
-        : `inferior en ${fmtTn(Math.abs(diff))} al año anterior`;
-      parrafos.push(
-        `En comparación con el año anterior, el volumen total movilizado fue ${diffStr}, ` +
-        `pasando de ${fmtTn(ant)} a ${fmtTn(act)}.`
-      );
-    }
+  // 4. Comparativo vs año anterior
+  if (toneladas.anterior != null && toneladas.anterior > 0 && toneladas.total > 0) {
+    const ant = toneladas.anterior, act = toneladas.total;
+    const diff = act - ant;
+    const diffStr = diff >= 0
+      ? `superior en ${fmtTn(Math.abs(diff))} al año anterior`
+      : `inferior en ${fmtTn(Math.abs(diff))} al año anterior`;
+    parrafos.push(
+      `En comparación con el año anterior, el volumen total movilizado fue ${diffStr}, ` +
+      `pasando de ${fmtTn(ant)} a ${fmtTn(act)}.`
+    );
   }
 
-  // 5. Productos — respeta el filtro de período (por_produto ya viene filtrado)
-  if (!permFiltro) {
-    const prods = topProductos(cargas.por_producto);
-    if (prods) {
+  // 5. Tipos de carga
+  if (tiposDeCarga.aplica) {
+    const nombres = topNombres(tiposDeCarga.items, 3);
+    if (nombres) {
       parrafos.push(
-        `Los principales tipos de carga movilizados durante el período fueron: ${prods}, ` +
+        `Los principales tipos de carga movilizados durante el período fueron: ${nombres}, ` +
         `concentrando la mayor parte del volumen operado en el puerto.`
       );
     }
   }
 
-  // 6. Permisionarios / operadores
-  if (perm.ranking_anual?.length > 0) {
+  // 6. Empresas / operadores
+  if (empresas.ranking.length > 0) {
     if (permFiltro) {
-      // Filtro de empresa: destacar su posición
       parrafos.push(
         `Los datos corresponden exclusivamente a las operaciones de ${permFiltro} en el período seleccionado.`
       );
-    } else if (hayCargaFiltro) {
-      // Filtro de Tipo de carga: el ranking general mezcla empresas de todos los
-      // rubros (el Excel no registra el tipo de carga por permisionario), así que
-      // se recalcula solo entre las empresas del rubro filtrado, vía EMPRESA_RUBRO.
-      const rankingDelRubro = perm.ranking_anual.filter(e => cargaFiltro.includes(_rubroDe(e.empresa)));
-      if (rankingDelRubro.length > 0) {
-        const topEmp = topEmpresas(rankingDelRubro, 3);
-        let p = `En relación a los operadores portuarios del rubro filtrado, participaron ${fmtNum(rankingDelRubro.length)} empresas en el movimiento de cargas`;
-        if (topEmp) p += `, destacándose ${topEmp} como las principales en términos de volumen operado`;
-        p += ".";
-        parrafos.push(p);
-      }
     } else {
-      const topEmp = topEmpresas(perm.ranking_anual, 3);
-      let p = `En relación a los operadores portuarios, participaron ${fmtNum(perm.total_operadores || perm.ranking_anual.length)} empresas en el movimiento de cargas`;
+      const topEmp = topEmpresas(empresas.ranking, 3);
+      const rubroTxt = hayCargaFiltro ? " del rubro filtrado" : "";
+      let p = `En relación a los operadores portuarios${rubroTxt}, participaron ${fmtNum(empresas.total_operadores)} empresas en el movimiento de cargas`;
       if (topEmp) p += `, destacándose ${topEmp} como las principales en términos de volumen operado`;
       p += ".";
       parrafos.push(p);
@@ -242,46 +169,26 @@ function generarAnual(data, filtros = {}) {
 }
 
 // ── Generador de texto MENSUAL ─────────────────────────────────────────────
-function generarMensual(data, filtros = {}) {
-  if (!data) return [];
-  const cmp    = data.comparativo  || {};
-  const cargas = data.cargas       || {};
+// Mismo principio: toneladas.por_mes / teus.por_mes / buques.por_mes ya vienen
+// resueltos por buildInformeData() para el mes y la combinación de filtros
+// activa. Ningún "if" de acá pregunta qué filtro está prendido.
+function generarMensual(informe) {
+  if (!informe) return [];
+  const { toneladas, teus, buques } = informe;
 
-  const porMes  = cmp.por_mes              || [];
-  const evolMes = cargas.evolucion_mensual || [];
+  const teusPorMes   = new Map(teus.por_mes.map(r => [r.mes, r]));
+  const buquesPorMes = new Map(buques.por_mes.map(r => [r.mes, r]));
 
-  const hayOpFiltro   = (filtros.operaciones || []).length > 0;
-  const hayFormFiltro = (filtros.cargas || []).length > 0;
-  // Cuando hay filtro de op/forma, merc_ant no está filtrado → no comparar interanual
-  const compararConAnterior = !hayOpFiltro && !hayFormFiltro;
+  return toneladas.por_mes.map(m => {
+    const varMerc = m.anterior != null && m.anterior > 0
+      ? ((m.total - m.anterior) / m.anterior * 100) : null;
 
-  // Indexar evolución de cargas por mes
-  const cargasPorMes = {};
-  evolMes.forEach(r => { cargasPorMes[r.mes] = r; });
+    const t = teusPorMes.get(m.mes)   || { actual: 0, anterior: 0 };
+    const b = buquesPorMes.get(m.mes) || { actual: null, anterior: null };
+    const varTeus = safe(t.anterior) > 0 ? ((safe(t.actual) - safe(t.anterior)) / safe(t.anterior) * 100) : null;
+    const varBq   = safe(b.anterior) > 0 ? ((safe(b.actual) - safe(b.anterior)) / safe(b.anterior) * 100) : null;
 
-  return porMes.map(m => {
-    const merAnt = safe(m.merc_ant);
-    const merAct = safe(m.merc_act);
-    // Recalcular variación (applyFilters modifica merc_act pero no merc_var)
-    const varMerc = compararConAnterior && merAnt > 0
-      ? ((merAct - merAnt) / merAnt * 100) : null;
-
-    // TEUs y buques: m.teus_act/m.buques_act ya vienen en 0/null desde applyFilters
-    // cuando no corresponden (operación, tipo de carga sin Contenerizado o
-    // permisionario != Exolgan para TEUs; cualquiera de esos tres para buques).
-    // La variación interanual no depende de compararConAnterior: si el dato no
-    // aplica, teusAnt/bqAnt ya llegan en 0 y la frase se omite sola.
-    const teusAct = safe(m.teus_act);
-    const teusAnt = safe(m.teus_ant);
-    const varTeus = teusAnt > 0 ? ((teusAct - teusAnt) / teusAnt * 100) : null;
-
-    const bqAct = safe(m.buques_act);
-    const bqAnt = safe(m.buques_ant);
-    const varBq = bqAnt > 0 ? ((bqAct - bqAnt) / bqAnt * 100) : null;
-
-    const c = cargasPorMes[m.mes] || {};
-
-    let texto = `En ${m.mes}, se movilizaron ${fmtTn(merAct)}`;
+    let texto = `En ${m.mes}, se movilizaron ${fmtTn(m.total)}`;
     if (varMerc !== null) {
       texto += varMerc !== 0
         ? `, evidenciando ${varFraseMes(varMerc)}`
@@ -289,28 +196,21 @@ function generarMensual(data, filtros = {}) {
     }
     texto += ". ";
 
-    // Desglose imp/exp/rem: solo mostrar los que tienen valor > 0
     const partes = [];
-    if (safe(c.importacion) > 0) partes.push(`importación: ${fmtTn(c.importacion)}`);
-    if (safe(c.exportacion) > 0) partes.push(`exportación: ${fmtTn(c.exportacion)}`);
-    if (safe(c.removido)    > 0) partes.push(`removido: ${fmtTn(c.removido)}`);
+    if (m.importacion > 0) partes.push(`importación: ${fmtTn(m.importacion)}`);
+    if (m.exportacion > 0) partes.push(`exportación: ${fmtTn(m.exportacion)}`);
+    if (m.removido    > 0) partes.push(`removido: ${fmtTn(m.removido)}`);
     if (partes.length > 1) texto += `Desglose por operación: ${partes.join(", ")}. `;
 
-    // TEUs — ya viene en 0 cuando no corresponde (ver nota arriba)
-    if (teusAct > 0) {
-      texto += `Se movilizaron ${fmtNum(teusAct)} TEUs`;
-      if (varTeus !== null && Math.abs(varTeus) >= 0.1) {
-        texto += `, con ${varFraseMes(varTeus)}`;
-      }
+    if (safe(t.actual) > 0) {
+      texto += `Se movilizaron ${fmtNum(t.actual)} TEUs`;
+      if (varTeus !== null && Math.abs(varTeus) >= 0.1) texto += `, con ${varFraseMes(varTeus)}`;
       texto += `. `;
     }
 
-    // Buques — ya viene en null/0 cuando no corresponde (ver nota arriba)
-    if (bqAct > 0) {
-      texto += `El número de buques fue de ${fmtNum(bqAct)}`;
-      if (varBq !== null && Math.abs(varBq) >= 0.1) {
-        texto += `, representando ${varFraseMes(varBq)}`;
-      }
+    if (safe(b.actual) > 0) {
+      texto += `El número de buques fue de ${fmtNum(b.actual)}`;
+      if (varBq !== null && Math.abs(varBq) >= 0.1) texto += `, representando ${varFraseMes(varBq)}`;
       texto += `.`;
     }
 
@@ -319,6 +219,8 @@ function generarMensual(data, filtros = {}) {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────
+// data: payload crudo del backend (sin pasar por applyFilters — buildInformeData
+// arma su propia vista filtrada desde las fuentes más granulares).
 export default function Informe({ data, filtros = {} }) {
   const [vista, setVista] = useState("anual");
 
@@ -338,8 +240,9 @@ export default function Informe({ data, filtros = {} }) {
     );
   }
 
-  const parrafosAnual    = generarAnual(data, filtros);
-  const registrosMensual = generarMensual(data, filtros);
+  const informe = buildInformeData(data, filtros);
+  const parrafosAnual    = generarAnual(informe, filtros);
+  const registrosMensual = generarMensual(informe);
 
   // Descripción del contexto activo
   const mesesFiltrados = filtros.meses         || [];

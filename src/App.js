@@ -191,7 +191,7 @@ function AppContent() {
               {pagina === "cargas"         && <Cargas         data={datos.cargas}         filtros={filtros} />}
               {pagina === "comparativo"    && <Comparativo    data={datos.comparativo}    filtros={filtros} />}
               {pagina === "permisionarios" && <Permisionarios data={datos.permisionarios} filtros={filtros} />}
-              {pagina === "informe"          && <Informe        data={datos}  filtros={filtros} />}
+              {pagina === "informe"          && <Informe        data={rawData}  filtros={filtros} />}
               {pagina === "infraestructura" && <Infraestructura />}
             </>
           )}
