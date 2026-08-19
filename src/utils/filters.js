@@ -58,6 +58,38 @@ function _rubroDe(empresa) {
   return EMPRESA_RUBRO[norm] ?? EMPRESA_RUBRO[`${norm}.`];
 }
 
+function _opCompleta(opKeys)      { return opKeys.length === ALL_OPS.length; }
+function _formaCompleta(formaKeys) { return formaKeys.length === ALL_FORMAS.length; }
+
+// ¿El permisionario filtrado (si hay) es compatible con el tipo de carga
+// filtrado (si hay)? true si no hay uno de los dos, o si el rubro real del
+// permisionario (vía EMPRESA_RUBRO) está entre los tipos de carga filtrados.
+// Regla compartida por applyFilters y buildInformeData — un solo lugar decide
+// esto, así los dos motores quedan de acuerdo siempre.
+function _permCompatibleConCarga(permisionario, formaKeys) {
+  if (!permisionario || _formaCompleta(formaKeys)) return true;
+  const rubro = _rubroDe(permisionario);
+  return !!(rubro && formaKeys.includes(FORMA_KEY[rubro]));
+}
+
+// TEUs: todos los contenedores del puerto son del rubro Contenerizado (hoy,
+// únicamente Exolgan S.A.), así que el total del puerto sigue siendo válido si
+// el permisionario filtrado es de ese rubro, o si el tipo de carga filtrado lo
+// incluye. No hay desglose de TEUs por operación → si hay filtro de Operación,
+// sin dato.
+function _teusAplica(permisionario, opKeys, formaKeys) {
+  const rubro = permisionario ? _rubroDe(permisionario) : null;
+  return _opCompleta(opKeys)
+    && (!permisionario || rubro === "Contenerizado")
+    && (_formaCompleta(formaKeys) || formaKeys.includes("contenerizado"));
+}
+
+// Buques: no se pueden atribuir a una empresa, un tipo de carga ni una
+// operación puntual (ambigüedad real del origen de datos) → solo con período.
+function _buquesAplica(permisionario, opKeys, formaKeys) {
+  return _opCompleta(opKeys) && !permisionario && _formaCompleta(formaKeys);
+}
+
 function safe(v) { return (v == null) ? 0 : Number(v) || 0; }
 function varPct(a, b) { return a > 0 ? ((b - a) / a * 100) : 0; }
 
@@ -65,9 +97,14 @@ function varPct(a, b) { return a > 0 ? ((b - a) / a * 100) : 0; }
 
 function buildEvo(datos, meses, opKeys, formaKeys, permisionario) {
   // 1. Permisionario: usa datos por empresa, respetando el filtro de operación
+  // y de tipo de carga. Si el permisionario filtrado no opera el rubro también
+  // filtrado (ej. una arenera con Tipo de carga=Contenerizado), no tiene nada
+  // real que aportar: todo en 0, no el total sin filtrar de esa empresa.
   if (permisionario) {
+    const compatible = _permCompatibleConCarga(permisionario, formaKeys);
     const src = filtrarMeses(datos.permisionarios?.por_mes || [], meses);
     return src.map(m => {
+      if (!compatible) return { mes: m.mes, toneladas: 0, importacion: 0, exportacion: 0, removido: 0 };
       const emp = (m.empresas || []).find(e => e.empresa?.trim() === permisionario?.trim());
       if (!emp) return { mes: m.mes, toneladas: 0, importacion: 0, exportacion: 0, removido: 0 };
       const imp = opKeys.includes("importacion") ? safe(emp.importacion) : 0;
@@ -287,26 +324,10 @@ export function applyFilters(datos, filtros) {
   }
 
   // TEUs y buques: reglas de negocio válidas para los 4 filtros (permisionario,
-  // tipo de carga, operación, período). Se calculan una sola vez acá y se aplican
-  // parejo en todas las ramas de patchMercAct, para que generarAnual y
-  // generarMensual (Informe.js) no tengan que duplicar esta lógica.
-  //
-  //  - Buques: no se pueden atribuir a una empresa, un tipo de carga ni una
-  //    operación puntual (ambigüedad real del origen de datos) → sin dato
-  //    salvo que el único filtro activo sea el de período.
-  //  - TEUs: todos los contenedores del puerto son de Exolgan S.A., así que el
-  //    total del puerto (sin filtrar por mes) es directamente el de Exolgan;
-  //    para el resto de las empresas es 0. Del mismo modo, el total de TEUs ya
-  //    "es" el total de carga Contenerizada, así que sigue siendo válido si el
-  //    filtro de Tipo de carga incluye Contenerizado (o no hay filtro). No hay
-  //    desglose de TEUs por operación → si hay filtro de Operación, sin dato.
-  const EXOLGAN = "EXOLGAN S.A.";
-  const esExolgan = permisionario?.trim().toUpperCase() === EXOLGAN;
-  const cargaIncluyeContenerizado = formaKeys.includes("contenerizado");
-  const opCompleta = opKeys.length === ALL_OPS.length;
-
-  const teusAplica   = opCompleta && (!permisionario || esExolgan) && cargaIncluyeContenerizado;
-  const buquesAplica = opCompleta && !permisionario && formaKeys.length === ALL_FORMAS.length;
+  // tipo de carga, operación, período), compartidas con buildInformeData (ver
+  // _teusAplica/_buquesAplica arriba) para que los dos motores nunca diverjan.
+  const teusAplica   = _teusAplica(permisionario, opKeys, formaKeys);
+  const buquesAplica = _buquesAplica(permisionario, opKeys, formaKeys);
 
   function _teusBuquesPatch(row) {
     return {
@@ -321,6 +342,11 @@ export function applyFilters(datos, filtros) {
   function patchMercAct(srcList) {
     if (!hasNonMesesFilter) return srcList;
     if (permisionario) {
+      // Igual que en buildEvo: si el permisionario filtrado no opera el rubro
+      // también filtrado, no tiene nada real que aportar acá tampoco.
+      if (!_permCompatibleConCarga(permisionario, formaKeys)) {
+        return srcList.map(r => ({ ...r, merc_ant: 0, merc_act: 0, ..._teusBuquesPatch(r) }));
+      }
       const empData = _getEmpData();
       if (empData?.por_mes?.length) {
         const byMes = new Map(empData.por_mes.map(m => [m.mes, {
@@ -410,9 +436,13 @@ export function applyFilters(datos, filtros) {
   const permMesFiltrado = mesesToShow.map(mesEntry => {
     let emps = mesEntry.empresas || [];
 
-    // Filtro de permisionario
+    // Filtro de permisionario (y compatibilidad con Tipo de carga, si está
+    // filtrado — hoy la página Permisionarios oculta ese filtro en la UI, pero
+    // el dato subyacente queda correcto igual si algo lo llega a habilitar).
     if (permisionario) {
-      emps = emps.filter(e => e.empresa?.trim() === permisionario.trim());
+      emps = _permCompatibleConCarga(permisionario, formaKeys)
+        ? emps.filter(e => e.empresa?.trim() === permisionario.trim())
+        : [];
     }
 
     // Filtro de operación (recalcula toneladas por empresa)
@@ -455,9 +485,31 @@ export function applyFilters(datos, filtros) {
     por_mes:          permMesFiltrado,
   };
 
+  // contenedores/navegación: reusan cmpTc/cmpTa/cmpBc/cmpBa (ya filtrados arriba
+  // vía teusAplica/buquesAplica) en vez del agregado anual crudo que traía
+  // datos.resumen — antes esas 4 tarjetas de Resumen nunca cambiaban con ningún
+  // filtro. La cantidad de contenedores y el TRN no tienen ningún desglose
+  // (ni mensual, ni por empresa/carga/operación) expuesto por el backend, así
+  // que a partir de acá (con al menos un filtro activo) quedan sin dato — el
+  // único caso donde son válidos es sin filtros, que ya salió antes por el
+  // `if (!hasAny) return datos;` del principio.
+  const newResumenFinal = {
+    ...newResumen,
+    contenedores: {
+      total_contenedores: null,
+      teus:                teusAplica ? cmpTc : null,
+      var_pct_teus:        teusAplica && cmpTa > 0 ? varPct(cmpTa, cmpTc) : null,
+    },
+    navegacion: {
+      total_buques: buquesAplica ? cmpBc : null,
+      total_trn:    null,
+      var_pct_bq:   buquesAplica && cmpBa > 0 ? varPct(cmpBa, cmpBc) : null,
+    },
+  };
+
   return {
     ...datos,
-    resumen:        newResumen,
+    resumen:        newResumenFinal,
     cargas:         newCargas,
     comparativo:    newComparativo,
     permisionarios: newPermisionarios,
@@ -511,20 +563,16 @@ export function buildInformeData(datos, filtros = {}) {
   const opCompleta    = opKeys.length === ALL_OPS.length;
   const formaCompleta = formaKeys.length === ALL_FORMAS.length;
 
-  const rubro    = permisionario ? _rubroDe(permisionario) : null;
-  const rubroKey = rubro ? FORMA_KEY[rubro] : null;
-  // Si hay permisionario Y tipo de carga filtrados a la vez y no coinciden, la
-  // empresa no opera ese rubro: no hay nada real que mostrar en ninguna métrica
-  // (ni toneladas, ni TEUs, ni ranking).
-  const permCompatibleConCarga = !permisionario || formaCompleta || (rubroKey && formaKeys.includes(rubroKey));
+  // Compatibilidad permisionario↔tipo de carga: regla compartida con
+  // applyFilters (ver _permCompatibleConCarga arriba) — si no coinciden, no hay
+  // nada real que mostrar en ninguna métrica (ni toneladas, ni TEUs, ni ranking).
+  const permCompatibleConCarga = _permCompatibleConCarga(permisionario, formaKeys);
 
   const sinFiltros = opCompleta && formaCompleta && !permisionario && meses.length === 0;
 
   // ── 1. Toneladas: fuente única de verdad para todo el módulo ───────────────
-  const evoBase = buildEvo(datos, meses, opKeys, formaKeys, permisionario);
-  const evoCompatible = evoBase.map(r => permCompatibleConCarga
-    ? r
-    : { mes: r.mes, toneladas: 0, importacion: 0, exportacion: 0, removido: 0 });
+  // buildEvo ya aplica la compatibilidad permisionario↔carga internamente.
+  const evoCompatible = buildEvo(datos, meses, opKeys, formaKeys, permisionario);
 
   // "Anterior" granular: solo existe en dos casos (ver excepciones documentadas
   // arriba de por qué no hay más). En cualquier otra combinación, no hay dato
@@ -564,18 +612,9 @@ export function buildInformeData(datos, filtros = {}) {
   }
 
   // ── 2. TEUs y buques ─────────────────────────────────────────────────────
-  // TEUs: todos los contenedores del puerto son del rubro Contenerizado (hoy,
-  // únicamente Exolgan S.A.), así que el total del puerto (comparativo.por_mes,
-  // ya recortado por mes) sigue siendo válido si el permisionario filtrado es de
-  // ese rubro, o si el tipo de carga filtrado lo incluye. No hay desglose de
-  // TEUs por operación en ningún lado → si hay filtro de Operación, sin dato.
-  const teusAplica = opCompleta
-    && (!permisionario || rubro === "Contenerizado")
-    && (formaCompleta || formaKeys.includes("contenerizado"));
-
-  // Buques: no se pueden atribuir a una empresa, un tipo de carga ni una
-  // operación puntual (excepción real, documentada arriba) → solo con período.
-  const buquesAplica = opCompleta && !permisionario && formaCompleta;
+  // Mismas reglas compartidas con applyFilters (_teusAplica/_buquesAplica arriba).
+  const teusAplica   = _teusAplica(permisionario, opKeys, formaKeys);
+  const buquesAplica = _buquesAplica(permisionario, opKeys, formaKeys);
 
   const cmpPorMes = filtrarMeses(datos.comparativo?.por_mes || [], meses);
 

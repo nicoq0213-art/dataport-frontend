@@ -109,7 +109,7 @@ export default function Resumen({ data }) {
       <div className="pill-row">
         <div className="pill">
           <div className="pill-num" style={{ color: "#1A5FA8" }}>
-            {Math.round(navegacion?.total_buques || 0).toLocaleString("es-AR")}
+            {fmt(navegacion?.total_buques, "entero")}
           </div>
           <div className="pill-lbl">Total buques</div>
         </div>
