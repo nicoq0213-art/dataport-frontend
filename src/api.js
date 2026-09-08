@@ -105,3 +105,4 @@ export function fetchBuques()         { return _get("/buques"); }
 export function fetchCargas()         { return _get("/cargas"); }
 export function fetchComparativo()    { return _get("/comparativo"); }
 export function fetchPermisionarios() { return _get("/permisionarios"); }
+export function fetchRecaudadoFacturado() { return _get("/recaudado-facturado"); }

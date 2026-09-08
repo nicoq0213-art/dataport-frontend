@@ -292,3 +292,7 @@ body {
 .filtros-pill.active { background: #2B7EC1; color: #fff; border-color: #2B7EC1; }
 .filtros-select { font-size: 12px; padding: 6px 8px; border: 0.5px solid #e0e0e0; border-radius: 6px; background: #fff; color: #333; outline: none; width: 100%; }
 .filtros-clear { font-size: 11px; color: #c0392b; background: none; border: none; cursor: pointer; text-align: left; padding: 0; margin-top: 2px; }
+
+/* ── RECAUDADO Y FACTURADO ── */
+.rf-filtros-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.rf-filtro-group { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }

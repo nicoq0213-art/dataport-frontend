@@ -11,6 +11,7 @@ import Buques from "./components/Buques";
 import Cargas from "./components/Cargas";
 import Comparativo from "./components/Comparativo";
 import Permisionarios from "./components/Permisionarios";
+import RecaudadoFacturado from "./components/RecaudadoFacturado";
 import Informe from "./components/Informe";
 import Infraestructura from "./components/Infraestructura";
 import Admin from "./components/Admin";
@@ -22,6 +23,7 @@ const MODULOS = [
   { id: "cargas",         label: "Cargas",             icon: "📦" },
   { id: "comparativo",    label: "Comparativo",        icon: "📊" },
   { id: "permisionarios", label: "Permisionarios",     icon: "🏭" },
+  { id: "recaudado",      label: "Recaudado y Facturado", icon: "💰" },
   { id: "informe",          label: "Informe",          icon: "📄" },
   { id: "infraestructura", label: "Infraestructura",  icon: "🏗️" },
 ];
@@ -80,7 +82,7 @@ function AppContent() {
   const enModulo          = pagina !== "config";
 
   // Módulos sin filtros aplicables: se oculta el panel completo
-  const SIN_FILTROS    = ["buques", "infraestructura"];
+  const SIN_FILTROS    = ["buques", "infraestructura", "recaudado"];
   const mostrarFiltros = enModulo && !SIN_FILTROS.includes(pagina);
   // Permisionarios no usa "Tipo de carga"
   const ocultarCargas  = pagina === "permisionarios";
@@ -191,6 +193,7 @@ function AppContent() {
               {pagina === "cargas"         && <Cargas         data={datos.cargas}         filtros={filtros} />}
               {pagina === "comparativo"    && <Comparativo    data={datos.comparativo}    filtros={filtros} />}
               {pagina === "permisionarios" && <Permisionarios data={datos.permisionarios} filtros={filtros} />}
+              {pagina === "recaudado"      && <RecaudadoFacturado data={datos.recaudado_facturado} />}
               {pagina === "informe"          && <Informe        data={rawData}  filtros={filtros} />}
               {pagina === "infraestructura" && <Infraestructura />}
             </>
