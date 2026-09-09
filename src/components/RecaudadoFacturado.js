@@ -61,6 +61,7 @@ export default function RecaudadoFacturado({ data }) {
   const periodoActual = periodos.find(p => p.key === periodoKey) || periodos[periodos.length - 1];
   const anioSel = periodoActual?.anio;
   const mesSel  = periodoActual?.mes;
+  const multiAnio = new Set(periodos.map(p => p.anio)).size > 1;
 
   const filasMes = rows.filter(r => r.anio === anioSel && r.mes === mesSel);
   const filasMesCuenta = cuenta ? filasMes.filter(r => r.cuenta === cuenta) : filasMes;
@@ -115,16 +116,20 @@ export default function RecaudadoFacturado({ data }) {
 
   return (
     <div>
-      <div className="rf-filtros-row">
-        <div className="rf-filtro-group">
+      <div className="filtros-panel" style={{ marginTop: 0, marginBottom: 14 }}>
+        <div className="filtros-group">
           <div className="filtros-label">Mes</div>
-          <select className="filtros-select" value={periodoActual?.key || ""} onChange={e => setPeriodoKey(e.target.value)}>
+          <div className="filtros-pills">
             {periodos.map(p => (
-              <option key={p.key} value={p.key}>{p.mes} {p.anio}</option>
+              <button key={p.key}
+                className={`filtros-pill ${p.key === periodoActual?.key ? "active" : ""}`}
+                onClick={() => setPeriodoKey(p.key)}>
+                {(MESES_CORTO[p.mes] || p.mes)}{multiAnio ? ` ${String(p.anio).slice(-2)}` : ""}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
-        <div className="rf-filtro-group">
+        <div className="filtros-group">
           <div className="filtros-label">Cuenta</div>
           <select className="filtros-select" value={cuenta} onChange={e => setCuenta(e.target.value)}>
             <option value="">Todas</option>
