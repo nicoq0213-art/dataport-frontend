@@ -4,7 +4,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const COLORS = ["#1A5FA8","#378ADD","#85B7EB","#B5D4F4","#2E75B6","#1a5fa8","#4da8e0","#cce0f5","#042C53"];
+const COLORS = ["#1A5FA8","#378ADD","#85B7EB","#B5D4F4","#2E75B6","#1a5fa8","#4da8e0","#cce0f5","#042C53","#6ec0f0","#021e38"];
 
 const TRAFICO_TIPOS = [
   { label: "Ultramar", key: "ultramar" },
