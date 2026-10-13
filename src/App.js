@@ -50,7 +50,7 @@ function AppContent() {
         setError(
           err.name === "AbortError"
             ? "El servidor tardó demasiado. Intentá nuevamente más tarde."
-            : "No se pudo cargar la información. Intentá nuevamente más tarde."
+            : err.message || "No se pudo cargar la información. Intentá nuevamente más tarde."
         );
       });
   }
