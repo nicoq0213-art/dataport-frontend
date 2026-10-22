@@ -5,10 +5,11 @@ import { LOGO_SRC } from "../constants";
 
 export default function Login() {
   const { login }  = useAuth();
-  const [user, setUser]       = useState("");
-  const [pass, setPass]       = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
+  const [user, setUser]         = useState("");
+  const [pass, setPass]         = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -17,7 +18,7 @@ export default function Login() {
     setError(null);
     try {
       const data = await loginAPI(user.trim(), pass);
-      login(data.access_token, data.role, data.nombre);
+      login(data.access_token, data.role, data.nombre, data.must_change_password);
     } catch (err) {
       setError(err.message || "No se pudo conectar con el servidor. Intentá nuevamente más tarde.");
     } finally {
@@ -45,15 +46,31 @@ export default function Login() {
             autoComplete="username"
             disabled={loading}
           />
-          <input
-            className="login-input"
-            type="password"
-            placeholder="Contraseña"
-            value={pass}
-            onChange={e => setPass(e.target.value)}
-            autoComplete="current-password"
-            disabled={loading}
-          />
+          <div style={{ position: "relative" }}>
+            <input
+              className="login-input"
+              type={showPass ? "text" : "password"}
+              placeholder="Contraseña"
+              style={{ paddingRight: 44 }}
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+              autoComplete="current-password"
+              disabled={loading}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(v => !v)}
+              tabIndex={-1}
+              style={{
+                position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 16, lineHeight: 1, padding: 4,
+              }}
+              aria-label={showPass ? "Ocultar contraseña" : "Ver contraseña"}
+            >
+              {showPass ? "🙈" : "👁"}
+            </button>
+          </div>
           {error && <div className="login-error">{error}</div>}
           <button
             className="login-btn"
@@ -63,6 +80,9 @@ export default function Login() {
             {loading ? "Ingresando…" : "Ingresar"}
           </button>
         </form>
+        <div style={{ fontSize: 11, color: "#b0b8c4", marginTop: 16, textAlign: "center" }}>
+          ¿Olvidó su contraseña? Comunicate con el soporte de NexBoards.
+        </div>
       </div>
     </div>
   );

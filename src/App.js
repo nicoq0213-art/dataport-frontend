@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { applyFilters } from "./utils/filters";
 import { LOGO_SRC } from "./constants";
 import Login from "./components/Login";
+import CambiarPassword from "./components/CambiarPassword";
 import LoadingScreen from "./components/LoadingScreen";
 import Resumen from "./components/Resumen";
 import Buques from "./components/Buques";
@@ -32,8 +33,9 @@ const FILTROS_INIT = { meses: [], operaciones: [], cargas: [], permisionario: ""
 
 function AppContent() {
   const { auth, logout } = useAuth();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [pagina, setPagina]     = useState("resumen");
+  const [menuOpen, setMenuOpen]   = useState(false);
+  const [pagina, setPagina]       = useState("resumen");
+  const [cambiarPass, setCambiarPass] = useState(false);
   const [rawData, setRawData]   = useState(null);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
@@ -62,6 +64,24 @@ function AppContent() {
   }, [auth]);
 
   if (!auth) return <Login />;
+
+  if (auth.mustChangePassword) {
+    return (
+      <CambiarPassword
+        forced
+        onSuccess={() => {}}
+      />
+    );
+  }
+
+  if (cambiarPass) {
+    return (
+      <CambiarPassword
+        onBack={() => setCambiarPass(false)}
+        onSuccess={() => setCambiarPass(false)}
+      />
+    );
+  }
 
   function navegar(id) { setPagina(id); setMenuOpen(false); }
 
@@ -135,6 +155,9 @@ function AppContent() {
                 <span>⚙</span> Configuración
               </div>
             )}
+            <div className="nav-item" onClick={() => { setMenuOpen(false); setCambiarPass(true); }}>
+              <span>🔑</span> Cambiar contraseña
+            </div>
             <div className="nav-item" onClick={logout}>
               <span>↩</span> Cerrar sesión
             </div>

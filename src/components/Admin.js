@@ -8,6 +8,7 @@ export default function Admin() {
   const [uploadMsg, setUploadMsg] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [newUser, setNewUser]   = useState({ username: "", password: "", nombre: "" });
+  const [showPass, setShowPass] = useState(false);
   const [userMsg, setUserMsg]   = useState(null);
 
   useEffect(() => {
@@ -105,8 +106,29 @@ export default function Admin() {
             <input className="login-input" placeholder="Nombre de usuario" value={newUser.username}
               autoCapitalize="none"
               onChange={e => setNewUser({ ...newUser, username: e.target.value })} />
-            <input className="login-input" type="password" placeholder="Contraseña" value={newUser.password}
-              onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+            <div style={{ position: "relative" }}>
+              <input
+                className="login-input"
+                type={showPass ? "text" : "password"}
+                placeholder="Contraseña (mín. 8 caracteres)"
+                style={{ paddingRight: 44 }}
+                value={newUser.password}
+                onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(v => !v)}
+                tabIndex={-1}
+                style={{
+                  position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 16, lineHeight: 1, padding: 4,
+                }}
+                aria-label={showPass ? "Ocultar contraseña" : "Ver contraseña"}
+              >
+                {showPass ? "🙈" : "👁"}
+              </button>
+            </div>
             <button className="admin-btn" type="submit" disabled={!newUser.username || !newUser.password}>
               Crear usuario
             </button>

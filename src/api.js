@@ -98,6 +98,28 @@ export async function eliminarUsuario(id) {
   return res.json();
 }
 
+// Auth: cambiar contraseña propia
+export async function cambiarPasswordPropio(currentPassword, newPassword, repeatPassword) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}/cambiar-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password:     newPassword,
+      repeat_password:  repeatPassword,
+    }),
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail || "Error al cambiar la contraseña");
+  }
+  return res.json();
+}
+
 // Dashboard
 export function fetchDashboard()      { return _get("/dashboard"); }
 export function fetchResumen()        { return _get("/resumen"); }
