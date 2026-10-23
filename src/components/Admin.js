@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { uploadExcel, getUsuarios, crearUsuario, eliminarUsuario } from "../api";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function Admin() {
   const [tab, setTab]           = useState("excel");
@@ -10,6 +11,8 @@ export default function Admin() {
   const [newUser, setNewUser]   = useState({ username: "", password: "", nombre: "" });
   const [showPass, setShowPass] = useState(false);
   const [userMsg, setUserMsg]   = useState(null);
+  const [pendingDel, setPendingDel] = useState(null); // { id, nombre, username }
+  const [deleting, setDeleting]     = useState(false);
 
   useEffect(() => {
     if (tab === "usuarios") loadUsuarios();
@@ -48,9 +51,19 @@ export default function Admin() {
     }
   }
 
-  async function handleEliminar(id) {
-    try { await eliminarUsuario(id); loadUsuarios(); } catch {}
+  async function handleEliminar() {
+    if (!pendingDel) return;
+    setDeleting(true);
+    try { await eliminarUsuario(pendingDel.id); loadUsuarios(); } catch {}
+    setDeleting(false);
+    setPendingDel(null);
   }
+
+  const nombreMostrado = pendingDel
+    ? (pendingDel.nombre && pendingDel.nombre !== pendingDel.username
+        ? `${pendingDel.nombre} (@${pendingDel.username})`
+        : `@${pendingDel.username}`)
+    : "";
 
   return (
     <div>
@@ -82,6 +95,14 @@ export default function Admin() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={!!pendingDel}
+        message={`¿Eliminar a ${nombreMostrado}? Esta acción no se puede deshacer.`}
+        onConfirm={handleEliminar}
+        onCancel={() => setPendingDel(null)}
+        loading={deleting}
+      />
+
       {tab === "usuarios" && (
         <div>
           <div className="admin-title">Usuarios de lectura</div>
@@ -93,7 +114,7 @@ export default function Admin() {
                   <div className="admin-user-name">{u.nombre || u.username}</div>
                   <div className="admin-user-sub">@{u.username}</div>
                 </div>
-                <button className="admin-del" onClick={() => handleEliminar(u.id)} title="Eliminar">✕</button>
+                <button className="admin-del" onClick={() => setPendingDel(u)} title="Eliminar">✕</button>
               </div>
             ))
           }
